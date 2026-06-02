@@ -231,7 +231,8 @@ function computeSegment(from, to, fromLine, bannedLines) {
   return { chosenLine, stops, transfer, time: stops * 90 + (transfer ? 240 : 0), allLines };
 }
 
-function buildGraph(bannedLines = []) {
+function buildGraph(bannedLines = [], noChangeStations = []) {
+  const noChange = new Set(noChangeStations);
   const adj = {}, sl = {};
   const add = (a, b, t) => {
     if (!adj[a]) adj[a] = []; if (!adj[b]) adj[b] = [];
@@ -249,6 +250,10 @@ function buildGraph(bannedLines = []) {
     }
   }
   for (const [st, ls] of Object.entries(sl)) {
+    // À une station où la correspondance est interdite ("pas_changer"), on ne crée
+    // pas les arêtes de changement de ligne : on peut traverser la station sur une
+    // ligne, mais jamais y passer d'une ligne à une autre.
+    if (noChange.has(st)) continue;
     const arr = [...ls];
     for (let i = 0; i < arr.length; i++)
       for (let j = i+1; j < arr.length; j++)
@@ -297,7 +302,13 @@ function perms(arr) {
 // on impose un vrai changement de ligne à cette station (la ligne par laquelle
 // on repart doit différer de celle par laquelle on est arrivé).
 function findOptimal(adj, sl, from, to, req = []) {
-  const reqObjs = req.map(r => typeof r === 'string' ? {st: r, type: 'passer_par'} : r);
+  // On ne garde comme waypoints (points de passage forcés) que les contraintes
+  // positives : "passer_par" et "changer". Les contraintes négatives comme
+  // "pas_changer" sont déjà prises en compte dans la construction du graphe
+  // (arêtes de correspondance retirées), donc on les ignore ici.
+  const reqObjs = req
+    .map(r => typeof r === 'string' ? {st: r, type: 'passer_par'} : r)
+    .filter(r => r.type === 'passer_par' || r.type === 'changer');
   if (!reqObjs.length) return dijkstra(adj, sl, from, to);
   let best = null;
   for (const p of perms(reqObjs)) {
@@ -375,6 +386,17 @@ function computeReqStatus(routeSteps, req, final = false, banned = []) {
       const canChange = arrLines.some(a => depLines.some(b => a !== b));
       return canChange ? 'satisfied' : 'failed';
     }
+    if (r.type === 'pas_changer') {
+      // Interdit de FAIRE SA CORRESPONDANCE à X. Traverser X sur une ligne (sans
+      // y changer) reste autorisé. La faute n'existe que si X est saisi comme nœud
+      // intérieur du trajet ET que le joueur y change de ligne (le segment suivant
+      // est une correspondance). Tant que X n'est pas un point de changement saisi,
+      // la contrainte est respectée.
+      const idx = routeSteps.findIndex((s, i) => i > 0 && i < routeSteps.length - 1 && s.st === r.st);
+      if (idx === -1) return 'satisfied'; // X n'est pas un nœud intérieur : OK
+      // X est un nœud intérieur : il y a faute s'il sert de correspondance.
+      return routeSteps[idx + 1].transfer ? 'failed' : 'satisfied';
+    }
     return 'pending';
   });
 }
@@ -382,6 +404,7 @@ function computeReqStatus(routeSteps, req, final = false, banned = []) {
 const REQ_LABELS = {
   passer_par: 'PASSER PAR',
   changer:    'CHANGER À',
+  pas_changer:'SANS CHANGER À',
 };
 
 const PUZZLES = [
@@ -404,6 +427,12 @@ const PUZZLES = [
   { from:'Gare du Nord', to:'Montparnasse-Bienvenue', banned:[],
     req:[{st:'Bastille', type:'passer_par'}],
     hint:'Votre itinéraire doit passer par Bastille.' },
+  { from:'Denfert-Rochereau', to:'Place de Clichy', banned:[],
+    req:[{st:'Montparnasse-Bienvenue', type:'pas_changer'}],
+    hint:'Sans changer à Montparnasse.' },
+  { from:'Bastille', to:'Place de Clichy', banned:[],
+    req:[{st:'République', type:'passer_par'}, {st:'Saint-Lazare', type:'pas_changer'}],
+    hint:'Par République, mais sans changer à Saint-Lazare.' },
 ];
 
 
@@ -431,6 +460,11 @@ function isConstraintBinding(req, baseOpt) {
   if (req.type === 'changer') {
     // contraignant si l'optimal libre ne change pas déjà de ligne ici
     return !pathChangesAt(baseOpt.path, req.st);
+  }
+  if (req.type === 'pas_changer') {
+    // contraignant si l'optimal libre change justement de ligne à cette station
+    // (l'interdire force alors un autre itinéraire) ; sinon la contrainte est vide.
+    return pathChangesAt(baseOpt.path, req.st);
   }
   return true;
 }
@@ -575,11 +609,27 @@ export default function Metrodoku() {
   }, []);
 
   const puzzle   = useMemo(getDailyPuzzle, []);
+  // Graphe principal (pour le jeu : autocomplete, segments du joueur). Il ne retire
+  // que les lignes interdites ; les correspondances "pas_changer" restent présentes,
+  // pour que le joueur puisse tenter le changement et être bloqué.
   const {adj,sl} = useMemo(() => buildGraph(puzzle.banned), [puzzle]);
+  // Stations où la correspondance est interdite (contrainte "pas_changer").
+  const noChangeSts = useMemo(
+    () => puzzle.req.filter(r => r.type === 'pas_changer').map(r => r.st),
+    [puzzle]
+  );
+  // Graphe contraint (pour le calcul de l'optimal) : retire en plus les
+  // correspondances aux stations "pas_changer".
+  const optGraph = useMemo(
+    () => buildGraph(puzzle.banned, noChangeSts), [puzzle, noChangeSts]
+  );
   // Le vrai optimal doit honorer toutes les contraintes : passage pour "passer_par",
-  // et véritable changement de ligne pour "changer". On passe donc les objets
-  // complets (avec leur type), pas seulement les noms de stations.
-  const optimal  = useMemo(() => findOptimal(adj, sl, puzzle.from, puzzle.to, puzzle.req), [adj,sl,puzzle]);
+  // véritable changement pour "changer", et interdiction de changer pour "pas_changer"
+  // (déjà encodée dans optGraph).
+  const optimal  = useMemo(
+    () => findOptimal(optGraph.adj, optGraph.sl, puzzle.from, puzzle.to, puzzle.req),
+    [optGraph, puzzle]
+  );
   // Optimal SANS les contraintes (lignes interdites uniquement) : sert de référence
   // pour vérifier que chaque contrainte impose réellement un détour.
   const baseOptimal = useMemo(() => findOptimal(adj, sl, puzzle.from, puzzle.to, []), [adj,sl,puzzle]);
@@ -652,6 +702,17 @@ export default function Metrodoku() {
     const newRoute = [...route, newStep];
     const newTime = totalTime + seg.time;
     const newVisited = new Set(visited); newVisited.add(st);
+    // Contrainte "pas_changer" : on bloque dès que le joueur tente de repartir
+    // d'une station interdite sur une autre ligne (donc d'y faire sa correspondance).
+    // Le changement se manifeste par seg.transfer sur ce nouveau segment qui part
+    // de curSt : si curSt est une station "pas_changer" et qu'on change ici, faute.
+    if (seg.transfer && route.length >= 2) {
+      const forbidden = puzzle.req.find(r => r.type === 'pas_changer' && r.st === curSt);
+      if (forbidden) {
+        setError(`Vous ne pouvez pas changer à ${curSt}. Révisez votre itinéraire.`);
+        return;
+      }
+    }
     // Vérification à l'arrivée : seules les contraintes MANIFESTES bloquent
     // la soumission (le joueur a clairement omis une action qu'il devait poser
     // lui-même, comme "changer à X"). Les contraintes vérifiées automatiquement
