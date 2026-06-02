@@ -454,10 +454,12 @@ const T = {
 
 // Couleurs sémantiques (thème clair) : texte foncé, fond pâle, bordure moyenne.
 const C = {
-  success: { fg:'#1B7A47', bg:'#E6F5EC', bd:'#A9DDBE' },
-  warn:    { fg:'#9A6A00', bg:'#FBF2DC', bd:'#E8D08A' },
-  error:   { fg:'#C0322B', bg:'#FBE9E8', bd:'#EDB3AF' },
-  goal:    { fg:'#62259D', bg:'#F1E9FA', bd:'#D2BCEC' },
+  gold:    { fg:'#A8780A', bg:'#FBF3D6', bd:'#E8CE7A' }, // optimal exact (or/doré)
+  success: { fg:'#1B7A47', bg:'#E6F5EC', bd:'#A9DDBE' }, // bien (≤ 110 %)
+  warn:    { fg:'#9A6A00', bg:'#FBF2DC', bd:'#E8D08A' }, // moyen (≤ 135 %)
+  error:   { fg:'#C0322B', bg:'#FBE9E8', bd:'#EDB3AF' }, // lent (> 135 %)
+  invalid: { fg:'#7A1020', bg:'#F4E0E4', bd:'#D89AA4' }, // contrainte non respectée (bordeaux)
+  goal:    { fg:'#62259D', bg:'#F1E9FA', bd:'#D2BCEC' }, // destination (pastille de saisie)
 };
 
 function LineBadge({lid, size=24}) {
@@ -719,12 +721,27 @@ export default function Metrodoku() {
     ? (storedResult ? !storedResult.success : false)
     : failedReqs.length > 0;
 
-  // Couleur du bloc score : l'échec d'une contrainte prime sur la rapidité.
-  const sc = hasFailed ? {color:C.error.fg,bg:C.error.bg,border:C.error.bd}
+  // Couleur du bloc score, par ordre de priorité :
+  // 1. contrainte non respectée  -> bordeaux (invalide, prime sur tout)
+  // 2. ratio == 100 (optimal)    -> or/doré (meilleure solution exacte)
+  // 3. ratio <= 110              -> vert (très bien)
+  // 4. ratio <= 135              -> orange (correct)
+  // 5. ratio > 135               -> rouge (valide mais lent)
+  const sc = hasFailed ? {color:C.invalid.fg,bg:C.invalid.bg,border:C.invalid.bd}
     : !ratio ? {color:T.muted,bg:T.surf1,border:T.border}
+    : ratio<=100 ? {color:C.gold.fg,bg:C.gold.bg,border:C.gold.bd}
     : ratio<=110 ? {color:C.success.fg,bg:C.success.bg,border:C.success.bd}
     : ratio<=135 ? {color:C.warn.fg,bg:C.warn.bg,border:C.warn.bd}
     :              {color:C.error.fg,bg:C.error.bg,border:C.error.bd};
+
+  // Libellé de performance, cohérent avec la couleur, pour lever toute ambiguïté
+  // visuelle entre niveaux proches (or/vert, rouge/bordeaux).
+  const scLabel = hasFailed ? null // la bannière d'invalidité tient déjà ce rôle
+    : !ratio ? null
+    : ratio<=100 ? 'Itinéraire optimal'
+    : ratio<=110 ? 'Excellent'
+    : ratio<=135 ? 'Pas mal'
+    :              'Trop long';
 
   // Regroupe le chemin Dijkstra en segments de même ligne, en coupant aussi
   // aux arrêts obligatoires (puzzle.req) pour qu'ils apparaissent comme nœuds.
@@ -984,38 +1001,37 @@ export default function Metrodoku() {
             <div style={{padding:'20px', borderRadius:12, background:sc.bg,
               border:`1px solid ${sc.border}`, textAlign:'center'}}>
               {hasFailed && (
-                <div style={{fontSize:13, fontWeight:700, color:C.error.fg, marginBottom:12,
+                <div style={{fontSize:13, fontWeight:700, color:C.invalid.fg, marginBottom:12,
                   paddingBottom:12, borderBottom:`1px solid ${sc.border}`}}>
                   Itinéraire invalide — il ne passe pas par{' '}
                   {failedReqs.map(r=>r.st).join(', ')}.
                 </div>
               )}
-              <div style={{fontSize:38, fontWeight:800, letterSpacing:'-1px', color:sc.color}}>
-                {fmt(totalTime)}
+              {/* Élément dominant : l'écart à l'optimal (ce qui compte vraiment). */}
+              <div style={{fontSize:44, fontWeight:800, letterSpacing:'-1.5px', color:sc.color,
+                lineHeight:1}}>
+                {ratio<=100 ? 'Optimal' : `+${ratio-100}%`}
               </div>
-              <div style={{fontSize:13, color:T.muted, marginTop:4}}>votre temps</div>
-              {(() => { const {metro,transfers} = timeBreakdown(route.slice(1)); return (
-                <div style={{fontSize:11, color:T.dim, marginTop:6, display:'flex', justifyContent:'center', gap:12}}>
-                  <span>🚇 {fmt(metro)} en métro</span>
-                  <span>🔄 {fmt(transfers)} de correspondances</span>
+              {scLabel && ratio>100 && (
+                <div style={{fontSize:13, fontWeight:700, color:sc.color, marginTop:8,
+                  letterSpacing:'0.3px'}}>
+                  {scLabel}
                 </div>
-              ); })()}
-              <div style={{margin:'12px auto 0', fontSize:13, color:T.muted,
-                display:'flex', justifyContent:'center', gap:8, alignItems:'center'}}>
-                <span>Optimal :</span>
-                <span style={{color:T.text, fontWeight:600}}>{fmt(optimal.time)}</span>
-                <span style={{padding:'2px 8px', borderRadius:20,
-                  border:`1px solid ${sc.border}`, background:sc.bg,
-                  color:sc.color, fontSize:11, fontWeight:700}}>
-                  +{ratio-100}%
-                </span>
+              )}
+              {ratio<=100 && (
+                <div style={{fontSize:13, color:T.muted, marginTop:8}}>
+                  Vous avez trouvé le trajet le plus rapide.
+                </div>
+              )}
+              {/* Information secondaire : les temps, discrets. */}
+              <div style={{margin:'14px auto 0', paddingTop:12, borderTop:`1px solid ${sc.border}`,
+                fontSize:13, color:T.muted, display:'flex', justifyContent:'center',
+                gap:16, alignItems:'baseline', flexWrap:'wrap'}}>
+                <span>Vous : <span style={{color:T.text, fontWeight:600,
+                  fontVariantNumeric:'tabular-nums'}}>{fmt(totalTime)}</span></span>
+                <span>Optimal : <span style={{color:T.text, fontWeight:600,
+                  fontVariantNumeric:'tabular-nums'}}>{fmt(optimal.time)}</span></span>
               </div>
-              {(() => { const {metro,transfers} = optimalBreakdown(optimal.path); return (
-                <div style={{fontSize:11, color:T.dim, marginTop:6, display:'flex', justifyContent:'center', gap:12}}>
-                  <span>🚇 {fmt(metro)} en métro</span>
-                  <span>🔄 {fmt(transfers)} de correspondances</span>
-                </div>
-              ); })()}
             </div>
 
             {/* Série d'optimaux consécutifs */}
