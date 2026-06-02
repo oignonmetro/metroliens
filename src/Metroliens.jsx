@@ -136,26 +136,28 @@ export default function Metrodoku() {
   const handlePickStation = useCallback((st) => {
     setQuery(''); setError(null);
     const seg = computeSegment(curSt, st, curLine, puzzle.banned);
+    let newStep;
     if (!seg) {
-      // Distinguer : la station est inatteignable en direct en général,
-      // ou seulement parce que la ligne qui relie est interdite ce jour-là.
+      // Saut impossible (aucune ligne directe, ou seule ligne interdite). On NE
+      // bloque PAS : on laisse le joueur faire l'erreur. Le segment est enregistré
+      // comme "impossible" et l'invalidité sera révélée à l'écran de fin.
       const linesWithoutBan = directLines(curSt, st, []);
-      const msg = linesWithoutBan.length
-        ? `La ligne ${linesWithoutBan[0]} est interdite aujourd'hui.`
-        : `Aucune ligne ne relie directement ${curSt} à ${st}.`;
-      setError(msg);
-      return;
+      const reason = linesWithoutBan.length
+        ? `la ligne ${linesWithoutBan[0]} (qui relie ${curSt} à ${st}) est interdite aujourd'hui`
+        : `aucune ligne ne relie directement ${curSt} à ${st}`;
+      newStep = { st, impossible: true, reason, stops: 0, transfer: false,
+        time: 0, allLines: [], intermediates: [] };
+    } else {
+      const intermediates = intermediateStations(curSt, st, seg.chosenLine);
+      newStep = { st, ...seg, intermediates };
     }
-    const intermediates = intermediateStations(curSt, st, seg.chosenLine);
-    const newStep = {st, ...seg, intermediates};
     const newRoute = [...route, newStep];
-    const newTime = totalTime + seg.time;
+    const newTime = totalTime + newStep.time;
     const newVisited = new Set(visited); newVisited.add(st);
     // Contrainte "pas_changer" : on bloque dès que le joueur tente de repartir
     // d'une station interdite sur une autre ligne (donc d'y faire sa correspondance).
-    // Le changement se manifeste par seg.transfer sur ce nouveau segment qui part
-    // de curSt : si curSt est une station "pas_changer" et qu'on change ici, faute.
-    if (seg.transfer && route.length >= 2) {
+    // Ne s'applique que sur un segment réellement emprunté (pas un saut impossible).
+    if (seg && seg.transfer && route.length >= 2) {
       const forbidden = puzzle.req.find(r => r.type === 'pas_changer' && r.st === curSt);
       if (forbidden) {
         setError(`Vous ne pouvez pas changer à ${curSt}. Révisez votre itinéraire.`);
@@ -164,14 +166,18 @@ export default function Metrodoku() {
     }
     // Vérification à l'arrivée : seules les contraintes MANIFESTES bloquent
     // la soumission (le joueur a clairement omis une action qu'il devait poser
-    // lui-même, comme "changer à X"). Les contraintes vérifiées automatiquement
-    // (passer_par) ne bloquent pas : la réponse est acceptée puis jugée à la fin.
+    // lui-même, comme "changer à X"). Les sauts impossibles et les contraintes
+    // vérifiées automatiquement (passer_par) ne bloquent pas : on accepte et on
+    // juge à la fin.
     if (st === puzzle.to) {
       const finalStatus = computeReqStatus(newRoute, puzzle.req, true, puzzle.banned);
       const blockingIdx = puzzle.req.findIndex(
         (r, i) => r.type === 'changer' && finalStatus[i] !== 'satisfied'
       );
-      if (blockingIdx !== -1) {
+      // On ne bloque le "changer" manquant que si l'itinéraire est par ailleurs
+      // possible : s'il contient déjà un saut impossible, on laisse aller au bilan final.
+      const hasImpossible = newRoute.some(s => s.impossible);
+      if (blockingIdx !== -1 && !hasImpossible) {
         const r = puzzle.req[blockingIdx];
         setError(`Vous devez ${REQ_LABELS[r.type].toLowerCase()} ${r.st}. Révisez votre itinéraire.`);
         return;
@@ -179,13 +185,16 @@ export default function Metrodoku() {
     }
     setRoute(newRoute);
     setTotalTime(newTime);
-    setCurSt(st); setCurLine(seg.chosenLine);
+    setCurSt(st); setCurLine(seg ? seg.chosenLine : null);
     setVisited(newVisited);
     const fStatus = computeReqStatus(newRoute, puzzle.req, st === puzzle.to, puzzle.banned);
     setReqStatus(fStatus);
     if (st === puzzle.to) {
       // Enregistrer le résultat du jour (une seule fois) et calculer le score.
-      const success = !puzzle.req.some((r, i) => fStatus[i] === 'failed');
+      // Un itinéraire contenant un saut impossible est invalide, quelles que soient
+      // les contraintes.
+      const hasImpossible = newRoute.some(s => s.impossible);
+      const success = !hasImpossible && !puzzle.req.some((r, i) => fStatus[i] === 'failed');
       const ratio = optimal ? Math.round((newTime / optimal.time) * 100) : null;
       const updated = recordResult({
         dayK: dayKey(), dayN: dayNumber(), puzzleNo: puzzle.puzzleNo,
@@ -237,12 +246,21 @@ export default function Metrodoku() {
     [phase, route, puzzle]
   );
   const failedReqs = puzzle.req.filter((r, i) => finalReqStatus[i] === 'failed');
+  // Sauts impossibles dans l'itinéraire (segments sans ligne directe, ou ligne interdite).
+  const impossibleSteps = route.filter(s => s.impossible);
   // En cas de partie restaurée depuis le stockage (déjà jouée), on s'appuie sur
   // le succès enregistré plutôt que sur le recalcul (route non disponible).
   const storedResult = stats && stats.lastResult;
   const hasFailed = alreadyDone
     ? (storedResult ? !storedResult.success : false)
-    : failedReqs.length > 0;
+    : (failedReqs.length > 0 || impossibleSteps.length > 0);
+
+  // Raisons d'invalidité, dans l'ordre : d'abord les sauts impossibles, puis les
+  // contraintes non respectées. Sert à composer le message de l'écran de fin.
+  const invalidReasons = [
+    ...impossibleSteps.map(s => s.reason),
+    ...failedReqs.map(r => `il ne passe pas par ${r.st}`),
+  ];
 
   // Couleur du bloc score, par ordre de priorité :
   // 1. contrainte non respectée  -> bordeaux (invalide, prime sur tout)
@@ -306,6 +324,11 @@ export default function Metrodoku() {
     for (let i = 1; i < route.length; i++) {
       const step = route[i];
       const fromSt = route[i - 1].st;
+      // Saut impossible : transition spéciale, sans ligne ni nombre de stations.
+      if (step.impossible) {
+        transitions.push({ from: fromSt, to: step.st, impossible: true });
+        continue;
+      }
       const inter = step.intermediates || [];
       // Indices des stations "passer_par" traversées dans ce segment, dans l'ordre.
       const cuts = [];
@@ -542,10 +565,11 @@ export default function Metrodoku() {
             <div style={{padding:'20px', borderRadius:12, background:sc.bg,
               border:`1px solid ${sc.border}`, textAlign:'center'}}>
               {hasFailed ? (
-                /* Cas invalide : on n'affiche que la raison, sans temps ni écart. */
+                /* Cas invalide : on n'affiche que la ou les raisons, sans temps ni écart.
+                   Les raisons (sauts impossibles, contraintes non respectées) sont
+                   reliées par "et". */
                 <div style={{fontSize:15, fontWeight:700, color:C.invalid.fg}}>
-                  Itinéraire invalide car il ne passe pas par{' '}
-                  {failedReqs.map(r=>r.st).join(', ')}.
+                  Itinéraire invalide car {invalidReasons.join(' et ')}.
                 </div>
               ) : ratio<=100 ? (
                 /* Cas optimal : le joueur a trouvé le meilleur trajet. On affiche
@@ -627,25 +651,33 @@ export default function Metrodoku() {
                       const isLast = i === trans.length - 1;
                       return (
                         <div key={i}>
-                          {/* Transition : ligne(s) + nombre de stations */}
+                          {/* Transition : ligne(s) + nombre de stations, ou saut impossible */}
                           <div style={{display:'flex', alignItems:'flex-start', gap:8, margin:'5px 0'}}>
                             <div style={{width:8, flexShrink:0, display:'flex', justifyContent:'center'}}>
-                              <div style={{width:1, background:T.border, minHeight:34}}/>
+                              <div style={{width:1, background:t.impossible?C.invalid.bd:T.border, minHeight:34}}/>
                             </div>
                             <div style={{paddingBottom:4}}>
-                              {t.transfer && (
-                                <div style={{fontSize:10, color:C.warn.fg, marginBottom:4,
-                                  letterSpacing:'0.3px'}}>CORRESPONDANCE</div>
+                              {t.impossible ? (
+                                <div style={{fontSize:11, fontWeight:700, color:C.invalid.fg}}>
+                                  ✗ aucune ligne directe
+                                </div>
+                              ) : (
+                                <>
+                                  {t.transfer && (
+                                    <div style={{fontSize:10, color:C.warn.fg, marginBottom:4,
+                                      letterSpacing:'0.3px'}}>CORRESPONDANCE</div>
+                                  )}
+                                  <div style={{display:'flex', flexWrap:'wrap', gap:5, alignItems:'center'}}>
+                                    {t.lines.map(l => <LineBadge key={l} lid={l} size={22}/>)}
+                                    <span style={{fontSize:11, color:T.dim}}>
+                                      · {t.stops} station{t.stops>1?'s':''}
+                                    </span>
+                                    {t.multi && (
+                                      <span style={{fontSize:10, color:T.dim}}>(plusieurs lignes possibles)</span>
+                                    )}
+                                  </div>
+                                </>
                               )}
-                              <div style={{display:'flex', flexWrap:'wrap', gap:5, alignItems:'center'}}>
-                                {t.lines.map(l => <LineBadge key={l} lid={l} size={22}/>)}
-                                <span style={{fontSize:11, color:T.dim}}>
-                                  · {t.stops} station{t.stops>1?'s':''}
-                                </span>
-                                {t.multi && (
-                                  <span style={{fontSize:10, color:T.dim}}>(plusieurs lignes possibles)</span>
-                                )}
-                              </div>
                             </div>
                           </div>
                           {/* Nœud d'arrivée de la transition */}
