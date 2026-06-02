@@ -136,7 +136,16 @@ export default function Metrodoku() {
   const handlePickStation = useCallback((st) => {
     setQuery(''); setError(null);
     const seg = computeSegment(curSt, st, curLine, puzzle.banned);
-    if (!seg) return; // station filtrée normalement, cas de secours silencieux
+    if (!seg) {
+      // Distinguer : la station est inatteignable en direct en général,
+      // ou seulement parce que la ligne qui relie est interdite ce jour-là.
+      const linesWithoutBan = directLines(curSt, st, []);
+      const msg = linesWithoutBan.length
+        ? `La ligne ${linesWithoutBan[0]} est interdite aujourd'hui.`
+        : `Aucune ligne ne relie directement ${curSt} à ${st}.`;
+      setError(msg);
+      return;
+    }
     const intermediates = intermediateStations(curSt, st, seg.chosenLine);
     const newStep = {st, ...seg, intermediates};
     const newRoute = [...route, newStep];
