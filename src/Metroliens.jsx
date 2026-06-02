@@ -184,6 +184,19 @@ function directLines(from, to, bannedLines = []) {
   return result.sort();
 }
 
+// Liste toutes les lignes (réelles, sans filtrage) qui desservent une station,
+// dans l'ordre numérique du réseau. Utilisé pour l'écran de fin.
+function linesAt(station) {
+  const lines = [];
+  for (const lid of Object.keys(SEG)) {
+    if (SEG[lid].some(seg => seg.includes(station))) lines.push(lid);
+  }
+  return lines.sort((a, b) => {
+    const na = parseFloat(a), nb = parseFloat(b);
+    return na - nb || a.localeCompare(b);
+  });
+}
+
 function stopsOnLine(from, to, lid) {
   for (const seg of SEG[lid]) {
     const iF = seg.indexOf(from), iT = seg.indexOf(to);
@@ -830,6 +843,9 @@ export default function Metrodoku() {
             {stats && stats.streak > 0 && (
               <span style={{color:T.text, fontWeight:600}}>🔥 {stats.streak}</span>
             )}
+            {stats && stats.optimalStreak > 0 && (
+              <span style={{color:T.text, fontWeight:600}}>🌋 {stats.optimalStreak}</span>
+            )}
           </div>
         </div>
         {phase==='playing' && (
@@ -853,10 +869,24 @@ export default function Metrodoku() {
         borderRadius:12, border:`1px solid ${T.border}`}}>
         <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:10}}>
           <div style={{background:T.surf2, borderRadius:8, padding:'6px 12px',
-            fontSize:14, fontWeight:600, flex:1, textAlign:'center'}}>{puzzle.from}</div>
+            flex:1, textAlign:'center'}}>
+            {phase==='done' && (
+              <div style={{display:'flex', flexWrap:'wrap', justifyContent:'center', gap:4, marginBottom:5}}>
+                {linesAt(puzzle.from).map(l => <LineBadge key={l} lid={l} size={18}/>)}
+              </div>
+            )}
+            <div style={{fontSize:14, fontWeight:600}}>{puzzle.from}</div>
+          </div>
           <span style={{color:T.muted, fontSize:18}}>→</span>
           <div style={{background:T.surf2, borderRadius:8, padding:'6px 12px',
-            fontSize:14, fontWeight:600, flex:1, textAlign:'center'}}>{puzzle.to}</div>
+            flex:1, textAlign:'center'}}>
+            {phase==='done' && (
+              <div style={{display:'flex', flexWrap:'wrap', justifyContent:'center', gap:4, marginBottom:5}}>
+                {linesAt(puzzle.to).map(l => <LineBadge key={l} lid={l} size={18}/>)}
+              </div>
+            )}
+            <div style={{fontSize:14, fontWeight:600}}>{puzzle.to}</div>
+          </div>
         </div>
         <div style={{display:'flex', flexWrap:'wrap', gap:8, alignItems:'center'}}>
           {puzzle.banned.length>0 && (
@@ -870,15 +900,16 @@ export default function Metrodoku() {
               marginLeft:puzzle.banned.length?8:0}}>
               {puzzle.req.map((r, i) => {
                 const status = reqStatus[i];
-                const col = status==='satisfied' ? C.success.fg : status==='failed' ? C.error.fg : T.muted;
-                const bg  = status==='satisfied' ? C.success.bg : status==='failed' ? C.error.bg : T.surf2;
-                const bd  = status==='satisfied' ? C.success.bd : status==='failed' ? C.error.bd : T.border;
+                const col = status==='satisfied' ? C.success.fg : status==='failed' ? C.error.fg : T.text;
+                const bg  = status==='satisfied' ? C.success.bg : status==='failed' ? C.error.bg : C.goal.bg;
+                const bd  = status==='satisfied' ? C.success.bd : status==='failed' ? C.error.bd : C.goal.bd;
                 return (
-                  <div key={i} style={{display:'flex', alignItems:'center', gap:4}}>
-                    <span style={{fontSize:9, color:col, letterSpacing:'0.4px', opacity:0.8}}>
+                  <div key={i} style={{display:'flex', alignItems:'center', gap:5}}>
+                    <span style={{fontSize:10, color:status==='pending'?C.goal.fg:col,
+                      letterSpacing:'0.4px', fontWeight:700}}>
                       {REQ_LABELS[r.type]}
                     </span>
-                    <span style={{fontSize:11, padding:'2px 8px',
+                    <span style={{fontSize:12, fontWeight:600, padding:'3px 10px',
                       background:bg, color:col, borderRadius:20, border:`1px solid ${bd}`,
                       textDecoration:status==='satisfied'?'line-through':'none'}}>
                       {r.st}
@@ -1008,7 +1039,7 @@ export default function Metrodoku() {
                 </div>
               )}
               {/* Élément dominant : l'écart à l'optimal (ce qui compte vraiment). */}
-              <div style={{fontSize:44, fontWeight:800, letterSpacing:'-1.5px', color:sc.color,
+              <div style={{fontSize:40, fontWeight:800, letterSpacing:'-1.5px', color:sc.color,
                 lineHeight:1}}>
                 {ratio<=100 ? 'Optimal' : `+${ratio-100}%`}
               </div>
@@ -1023,32 +1054,36 @@ export default function Metrodoku() {
                   Vous avez trouvé le trajet le plus rapide.
                 </div>
               )}
-              {/* Information secondaire : les temps, discrets. */}
-              <div style={{margin:'14px auto 0', paddingTop:12, borderTop:`1px solid ${sc.border}`,
-                fontSize:13, color:T.muted, display:'flex', justifyContent:'center',
-                gap:16, alignItems:'baseline', flexWrap:'wrap'}}>
-                <span>Vous : <span style={{color:T.text, fontWeight:600,
-                  fontVariantNumeric:'tabular-nums'}}>{fmt(totalTime)}</span></span>
-                <span>Optimal : <span style={{color:T.text, fontWeight:600,
-                  fontVariantNumeric:'tabular-nums'}}>{fmt(optimal.time)}</span></span>
+              {/* Comparaison des temps, avec le détail trajet / correspondances. */}
+              <div style={{margin:'16px auto 0', paddingTop:14, borderTop:`1px solid ${sc.border}`,
+                display:'flex', justifyContent:'center', gap:24, flexWrap:'wrap'}}>
+                {(() => { const {metro,transfers} = timeBreakdown(route.slice(1)); return (
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontSize:11, color:T.muted, letterSpacing:'0.3px'}}>VOUS</div>
+                    <div style={{fontSize:20, fontWeight:700, color:T.text, marginTop:2,
+                      fontVariantNumeric:'tabular-nums'}}>{fmt(totalTime)}</div>
+                    <div style={{fontSize:10, color:T.dim, marginTop:3, lineHeight:1.5}}>
+                      🚇 {fmt(metro)}<br/>🔄 {fmt(transfers)}
+                    </div>
+                  </div>
+                ); })()}
+                {(() => { const {metro,transfers} = optimalBreakdown(optimal.path); return (
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontSize:11, color:T.muted, letterSpacing:'0.3px'}}>OPTIMAL</div>
+                    <div style={{fontSize:20, fontWeight:700, color:T.text, marginTop:2,
+                      fontVariantNumeric:'tabular-nums'}}>{fmt(optimal.time)}</div>
+                    <div style={{fontSize:10, color:T.dim, marginTop:3, lineHeight:1.5}}>
+                      🚇 {fmt(metro)}<br/>🔄 {fmt(transfers)}
+                    </div>
+                  </div>
+                ); })()}
               </div>
             </div>
 
-            {/* Série d'optimaux consécutifs */}
-            {stats && (
-              <div style={{padding:'16px', background:T.surf1, borderRadius:12,
-                border:`1px solid ${T.border}`, textAlign:'center'}}>
-                <div style={{fontSize:32, fontWeight:800, color:T.text,
-                  fontVariantNumeric:'tabular-nums', lineHeight:1}}>
-                  {stats.optimalStreak || 0}
-                </div>
-                <div style={{fontSize:11, color:T.muted, letterSpacing:'0.5px',
-                  textTransform:'uppercase', marginTop:6}}>
-                  meilleures solutions d'affilée
-                </div>
-                <div style={{fontSize:11, color:T.dim, marginTop:4}}>
-                  Nombre de jours consécutifs où vous avez trouvé l'itinéraire optimal.
-                </div>
+            {/* Série d'optimaux consécutifs : rappel discret. */}
+            {stats && (stats.optimalStreak || 0) > 0 && (
+              <div style={{fontSize:12, color:T.muted, textAlign:'center'}}>
+                🌋 {stats.optimalStreak} jour{stats.optimalStreak>1?'s':''} d'affilée en solution optimale
               </div>
             )}
             <div style={{padding:'14px 16px', background:T.surf1, borderRadius:10,
