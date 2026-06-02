@@ -680,14 +680,13 @@ export default function Metrodoku() {
   }, []);
 
   const filtered = useMemo(() => {
-    if (query.length < 2) return [];
+    if (query.length < 3) return [];
     // Normalisation : minuscules + suppression des diacritiques (accents),
     // pour que "cha" trouve "Châtelet", "eglise" trouve "Église", etc.
     const norm = (s) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const q = norm(query);
     return allStations
       .filter(s => s !== curSt && norm(s).includes(q))
-      .filter(s => directLines(curSt, s, puzzle.banned).length > 0)
       .slice(0, 9);
   }, [query, allStations, curSt, puzzle.banned]);
 
@@ -1048,7 +1047,7 @@ export default function Metrodoku() {
                 value={query}
                 onChange={e=>{setQuery(e.target.value);setError(null);}}
                 onKeyDown={e=>{if(e.key==='Enter'&&filtered.length===1)handlePickStation(filtered[0]);}}
-                placeholder="Tapez le nom d'une station…"
+                placeholder="Tapez au moins 3 lettres…"
                 style={{width:'100%', padding:'10px 14px', borderRadius:8,
                   border:`1px solid ${error?C.error.bd:T.border}`,
                   background:error?C.error.bg:T.surf1, color:T.text, fontSize:14,
