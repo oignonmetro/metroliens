@@ -773,6 +773,53 @@ export default function Metrodoku() {
     return segs;
   }
 
+  // Construit les "nœuds" à afficher pour l'itinéraire du joueur. Chaque pas saisi
+  // par le joueur (route[i]) est un trajet sur une seule ligne. Si une station de
+  // type "passer_par" est traversée à l'intérieur de ce trajet (donc présente dans
+  // ses intermediates), on coupe le segment à cette station pour la faire apparaître
+  // comme nœud, exactement comme le fait l'itinéraire optimal.
+  // Renvoie une liste de transitions : { st (station de départ), to, lines, stops,
+  // transfer, multi } et le tout se termine par le nœud d'arrivée final.
+  function playerNodes(route) {
+    const passSts = new Set(
+      puzzle.req.filter(r => r.type === 'passer_par').map(r => r.st)
+    );
+    const transitions = [];
+    for (let i = 1; i < route.length; i++) {
+      const step = route[i];
+      const fromSt = route[i - 1].st;
+      const inter = step.intermediates || [];
+      // Indices des stations "passer_par" traversées dans ce segment, dans l'ordre.
+      const cuts = [];
+      inter.forEach((s, idx) => { if (passSts.has(s)) cuts.push({ st: s, idx }); });
+      if (!cuts.length) {
+        transitions.push({
+          from: fromSt, to: step.st, lines: step.allLines,
+          stops: step.stops, transfer: step.transfer, multi: step.allLines.length > 1,
+        });
+        continue;
+      }
+      // On découpe : fromSt -> cut1 -> cut2 -> ... -> step.st, sur la même ligne.
+      // Le nombre de stations entre deux points est la différence de leurs positions
+      // (les intermediates sont ordonnés entre fromSt (position -1) et step.st).
+      let prevSt = fromSt, prevIdx = -1;
+      for (const c of cuts) {
+        transitions.push({
+          from: prevSt, to: c.st, lines: step.allLines,
+          stops: c.idx - prevIdx, transfer: prevSt === fromSt ? step.transfer : false,
+          multi: step.allLines.length > 1,
+        });
+        prevSt = c.st; prevIdx = c.idx;
+      }
+      transitions.push({
+        from: prevSt, to: step.st, lines: step.allLines,
+        stops: (inter.length) - prevIdx, transfer: false,
+        multi: step.allLines.length > 1,
+      });
+    }
+    return transitions;
+  }
+
   return (
     <div style={{fontFamily:"'Familjen Grotesk',system-ui,-apple-system,sans-serif", background:T.bg, color:T.text,
       minHeight:'100vh', display:'flex', flexDirection:'column', maxWidth:480, margin:'0 auto'}}>
@@ -1027,43 +1074,55 @@ export default function Metrodoku() {
             <div style={{padding:'14px 16px', background:T.surf1, borderRadius:10,
               border:`1px solid ${T.border}`}}>
               <div style={{fontSize:11, color:T.muted, letterSpacing:'0.5px', marginBottom:12}}>
-                VOTRE ITINÉRAIRE · LIGNES RÉVÉLÉES
+                VOTRE ITINÉRAIRE
               </div>
-              {route.map((step, i) => {
-                const isFirst=i===0, isLast=i===route.length-1;
+              {(() => {
+                const trans = playerNodes(route);
                 return (
-                  <div key={i}>
+                  <>
+                    {/* Nœud de départ */}
                     <div style={{display:'flex', alignItems:'center', gap:8}}>
-                      <div style={{width:8, height:8, borderRadius:'50%', flexShrink:0,
-                        background:(isFirst||isLast)?T.text:T.dim}}/>
-                      <span style={{fontSize:13, color:(isFirst||isLast)?T.text:T.muted,
-                        fontWeight:(isFirst||isLast)?600:400}}>{step.st}</span>
+                      <div style={{width:8, height:8, borderRadius:'50%', flexShrink:0, background:T.text}}/>
+                      <span style={{fontSize:13, color:T.text, fontWeight:600}}>{route[0].st}</span>
                     </div>
-                    {!isLast && (
-                      <div style={{display:'flex', alignItems:'flex-start', gap:8, margin:'5px 0'}}>
-                        <div style={{width:8, flexShrink:0, display:'flex', justifyContent:'center'}}>
-                          <div style={{width:1, background:T.border, minHeight:34}}/>
-                        </div>
-                        <div style={{paddingBottom:4}}>
-                          {route[i+1].transfer && (
-                            <div style={{fontSize:10, color:C.warn.fg, marginBottom:4,
-                              letterSpacing:'0.3px'}}>CORRESPONDANCE</div>
-                          )}
-                          <div style={{display:'flex', flexWrap:'wrap', gap:5, alignItems:'center'}}>
-                            {route[i+1].allLines.map(l => <LineBadge key={l} lid={l} size={22}/>)}
-                            <span style={{fontSize:11, color:T.dim}}>
-                              · {route[i+1].stops} arrêt{route[i+1].stops>1?'s':''}
-                            </span>
-                            {route[i+1].allLines.length>1 && (
-                              <span style={{fontSize:10, color:T.dim}}>(plusieurs lignes possibles)</span>
-                            )}
+                    {trans.map((t, i) => {
+                      const isLast = i === trans.length - 1;
+                      return (
+                        <div key={i}>
+                          {/* Transition : ligne(s) + nombre de stations */}
+                          <div style={{display:'flex', alignItems:'flex-start', gap:8, margin:'5px 0'}}>
+                            <div style={{width:8, flexShrink:0, display:'flex', justifyContent:'center'}}>
+                              <div style={{width:1, background:T.border, minHeight:34}}/>
+                            </div>
+                            <div style={{paddingBottom:4}}>
+                              {t.transfer && (
+                                <div style={{fontSize:10, color:C.warn.fg, marginBottom:4,
+                                  letterSpacing:'0.3px'}}>CORRESPONDANCE</div>
+                              )}
+                              <div style={{display:'flex', flexWrap:'wrap', gap:5, alignItems:'center'}}>
+                                {t.lines.map(l => <LineBadge key={l} lid={l} size={22}/>)}
+                                <span style={{fontSize:11, color:T.dim}}>
+                                  · {t.stops} station{t.stops>1?'s':''}
+                                </span>
+                                {t.multi && (
+                                  <span style={{fontSize:10, color:T.dim}}>(plusieurs lignes possibles)</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          {/* Nœud d'arrivée de la transition */}
+                          <div style={{display:'flex', alignItems:'center', gap:8}}>
+                            <div style={{width:8, height:8, borderRadius:'50%', flexShrink:0,
+                              background:isLast?T.text:T.dim}}/>
+                            <span style={{fontSize:13, color:isLast?T.text:T.muted,
+                              fontWeight:isLast?600:400}}>{t.to}</span>
                           </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
+                      );
+                    })}
+                  </>
                 );
-              })}
+              })()}
             </div>
 
             {/* Itinéraire optimal (si différent) */}
@@ -1087,7 +1146,7 @@ export default function Metrodoku() {
                       </div>
                       <LineBadge lid={seg.ln} size={22}/>
                       <span style={{fontSize:11, color:T.dim}}>
-                        {seg.stops} arrêt{seg.stops>1?'s':''}
+                        {seg.stops} station{seg.stops>1?'s':''}
                       </span>
                     </div>
                     {si===arr.length-1 && (
