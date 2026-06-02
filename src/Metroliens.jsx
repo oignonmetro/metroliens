@@ -1092,53 +1092,66 @@ export default function Metrodoku() {
             {/* Score */}
             <div style={{padding:'20px', borderRadius:12, background:sc.bg,
               border:`1px solid ${sc.border}`, textAlign:'center'}}>
-              {hasFailed && (
-                <div style={{fontSize:13, fontWeight:700, color:C.invalid.fg, marginBottom:12,
-                  paddingBottom:12, borderBottom:`1px solid ${sc.border}`}}>
-                  Itinéraire invalide — il ne passe pas par{' '}
+              {hasFailed ? (
+                /* Cas invalide : on n'affiche que la raison, sans temps ni écart. */
+                <div style={{fontSize:15, fontWeight:700, color:C.invalid.fg}}>
+                  Itinéraire invalide car il ne passe pas par{' '}
                   {failedReqs.map(r=>r.st).join(', ')}.
                 </div>
-              )}
-              {/* Élément dominant : l'écart à l'optimal (ce qui compte vraiment). */}
-              <div style={{fontSize:40, fontWeight:800, letterSpacing:'-1.5px', color:sc.color,
-                lineHeight:1}}>
-                {ratio<=100 ? 'Optimal' : `+${ratio-100}%`}
-              </div>
-              {scLabel && ratio>100 && (
-                <div style={{fontSize:13, fontWeight:700, color:sc.color, marginTop:8,
-                  letterSpacing:'0.3px'}}>
-                  {scLabel}
-                </div>
-              )}
-              {ratio<=100 && (
-                <div style={{fontSize:13, color:T.muted, marginTop:8}}>
-                  Vous avez trouvé le trajet le plus rapide.
-                </div>
-              )}
-              {/* Comparaison des temps, avec le détail trajet / correspondances. */}
-              <div style={{margin:'16px auto 0', paddingTop:14, borderTop:`1px solid ${sc.border}`,
-                display:'flex', justifyContent:'center', gap:24, flexWrap:'wrap'}}>
-                {(() => { const {metro,transfers} = timeBreakdown(route.slice(1)); return (
-                  <div style={{textAlign:'center'}}>
-                    <div style={{fontSize:11, color:T.muted, letterSpacing:'0.3px'}}>VOUS</div>
-                    <div style={{fontSize:20, fontWeight:700, color:T.text, marginTop:2,
-                      fontVariantNumeric:'tabular-nums'}}>{fmt(totalTime)}</div>
-                    <div style={{fontSize:10, color:T.dim, marginTop:3, lineHeight:1.5}}>
-                      🚇 {fmt(metro)}<br/>🔄 {fmt(transfers)}
+              ) : ratio<=100 ? (
+                /* Cas optimal : le joueur a trouvé le meilleur trajet. On affiche
+                   seulement son temps et son détail (la comparaison serait redondante). */
+                (() => { const {metro,transfers} = timeBreakdown(route.slice(1)); return (
+                  <div>
+                    <div style={{fontSize:13, fontWeight:700, color:sc.color, marginBottom:10,
+                      letterSpacing:'0.3px'}}>
+                      Vous avez trouvé le trajet le plus rapide.
+                    </div>
+                    <div style={{fontSize:32, fontWeight:800, color:T.text,
+                      fontVariantNumeric:'tabular-nums', lineHeight:1}}>{fmt(totalTime)}</div>
+                    <div style={{fontSize:11, color:T.dim, marginTop:6}}>
+                      🚇 {fmt(metro)} · 🔄 {fmt(transfers)}
                     </div>
                   </div>
-                ); })()}
-                {(() => { const {metro,transfers} = optimalBreakdown(optimal.path); return (
-                  <div style={{textAlign:'center'}}>
-                    <div style={{fontSize:11, color:T.muted, letterSpacing:'0.3px'}}>OPTIMAL</div>
-                    <div style={{fontSize:20, fontWeight:700, color:T.text, marginTop:2,
-                      fontVariantNumeric:'tabular-nums'}}>{fmt(optimal.time)}</div>
-                    <div style={{fontSize:10, color:T.dim, marginTop:3, lineHeight:1.5}}>
-                      🚇 {fmt(metro)}<br/>🔄 {fmt(transfers)}
-                    </div>
+                ); })()
+              ) : (
+                /* Cas normal : écart en grand, libellé, puis comparaison VOUS / OPTIMAL. */
+                <>
+                  <div style={{fontSize:40, fontWeight:800, letterSpacing:'-1.5px', color:sc.color,
+                    lineHeight:1}}>
+                    +{ratio-100}%
                   </div>
-                ); })()}
-              </div>
+                  {scLabel && (
+                    <div style={{fontSize:13, fontWeight:700, color:sc.color, marginTop:8,
+                      letterSpacing:'0.3px'}}>
+                      {scLabel}
+                    </div>
+                  )}
+                  <div style={{margin:'16px auto 0', paddingTop:14, borderTop:`1px solid ${sc.border}`,
+                    display:'flex', justifyContent:'center', gap:24, flexWrap:'wrap'}}>
+                    {(() => { const {metro,transfers} = timeBreakdown(route.slice(1)); return (
+                      <div style={{textAlign:'center'}}>
+                        <div style={{fontSize:11, color:T.muted, letterSpacing:'0.3px'}}>VOUS</div>
+                        <div style={{fontSize:20, fontWeight:700, color:T.text, marginTop:2,
+                          fontVariantNumeric:'tabular-nums'}}>{fmt(totalTime)}</div>
+                        <div style={{fontSize:10, color:T.dim, marginTop:3, lineHeight:1.5}}>
+                          🚇 {fmt(metro)}<br/>🔄 {fmt(transfers)}
+                        </div>
+                      </div>
+                    ); })()}
+                    {(() => { const {metro,transfers} = optimalBreakdown(optimal.path); return (
+                      <div style={{textAlign:'center'}}>
+                        <div style={{fontSize:11, color:T.muted, letterSpacing:'0.3px'}}>OPTIMAL</div>
+                        <div style={{fontSize:20, fontWeight:700, color:T.text, marginTop:2,
+                          fontVariantNumeric:'tabular-nums'}}>{fmt(optimal.time)}</div>
+                        <div style={{fontSize:10, color:T.dim, marginTop:3, lineHeight:1.5}}>
+                          🚇 {fmt(metro)}<br/>🔄 {fmt(transfers)}
+                        </div>
+                      </div>
+                    ); })()}
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Série d'optimaux consécutifs : rappel discret. */}
