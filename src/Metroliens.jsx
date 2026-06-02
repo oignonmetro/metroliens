@@ -45,7 +45,7 @@ const SEG = {
 
   '5': [["Place d'Italie",'Campo-Formio','Saint-Marcel',"Gare d'Austerlitz",
     'Quai de la Rapée','Bastille','Bréguet-Sabin','Richard-Lenoir','Oberkampf',
-    'Jacques Bonsergent','République',"Gare de l'Est",'Gare du Nord','Stalingrad',
+    'République','Jacques Bonsergent',"Gare de l'Est",'Gare du Nord','Stalingrad',
     'Jaurès','Laumière','Ourcq','Porte de Pantin','Hoche','Église de Pantin',
     'Bobigny-Pantin-Raymond Queneau','Bobigny-Pablo Picasso']],
 
@@ -497,33 +497,42 @@ function saveStore(obj) {
   }
 }
 
-// Enregistre le résultat de la partie du jour et met à jour la série (streak).
-// Renvoie l'état de stats à jour. N'écrase jamais un résultat déjà enregistré
-// pour le même jour (une seule partie par jour).
+// Enregistre le résultat de la partie du jour et met à jour deux séries :
+// - streak : jours RÉUSSIS consécutifs (contrainte respectée), pour le 🔥.
+// - optimalStreak : jours où la MEILLEURE solution (l'optimal) a été trouvée,
+//   consécutifs. Une solution est optimale quand son temps égale l'optimal (ratio 100).
+// N'écrase jamais un résultat déjà enregistré pour le même jour.
 function recordResult({ dayK, dayN, puzzleNo, playerTime, optimalTime, ratio, success, route }) {
   const store = loadStore();
   if (store.lastDay === dayK && store.lastResult) {
     return store; // déjà joué aujourd'hui : on ne réécrit pas
   }
+  // Série de jours réussis (consécutive : la victoire de la veille requise).
   const prevStreak = store.streak || 0;
   const prevDayN = store.lastDayN;
-  // La série continue si la dernière partie gagnée était hier (dayN - 1).
   let streak;
   if (success) {
     streak = (prevDayN === dayN - 1) ? prevStreak + 1 : 1;
   } else {
     streak = 0;
   }
-  const played = (store.played || 0) + 1;
-  const won = (store.won || 0) + (success ? 1 : 0);
+  // Série d'optimaux (consécutive : l'optimal de la veille requis).
+  const isOptimal = success && ratio != null && ratio <= 100;
+  const prevOptStreak = store.optimalStreak || 0;
+  const prevOptDayN = store.lastOptDayN;
+  let optimalStreak;
+  if (isOptimal) {
+    optimalStreak = (prevOptDayN === dayN - 1) ? prevOptStreak + 1 : 1;
+  } else {
+    optimalStreak = 0;
+  }
   const next = {
     ...store,
     lastDay: dayK,
     lastDayN: success ? dayN : prevDayN,
     streak,
-    maxStreak: Math.max(store.maxStreak || 0, streak),
-    played,
-    won,
+    optimalStreak,
+    lastOptDayN: isOptimal ? dayN : prevOptDayN,
     // On enregistre aussi l'itinéraire joué, afin de pouvoir le réafficher
     // (avec la solution) si le joueur revient sur la page le même jour.
     lastResult: { puzzleNo, playerTime, optimalTime, ratio, success, route },
@@ -581,16 +590,16 @@ export default function Metrodoku() {
   const [reqStatus, setReqStatus] = useState(() => puzzle.req.map(()=>'pending'));
   const [stats,       setStats]       = useState(null);   // stats à jour après enregistrement
   const [alreadyDone, setAlreadyDone] = useState(false);  // partie du jour déjà jouée
-  const [copied,      setCopied]      = useState(false);  // feedback du bouton partager
 
   // Au montage : si la partie du jour est déjà enregistrée, on verrouille et on
   // restaure directement l'écran de résultat (empêche de rejouer le même jour).
   useEffect(() => {
     const dk = dayKey();
+    // Charger les stats existantes pour afficher la série en cours dès l'ouverture.
+    setStats(loadStore());
     const prev = todaysResult(dk);
     if (prev) {
       setAlreadyDone(true);
-      setStats(loadStore());
       setTotalTime(prev.playerTime);
       // Restaurer l'itinéraire joué pour pouvoir le réafficher avec la solution.
       if (prev.route && prev.route.length) {
@@ -673,37 +682,6 @@ export default function Metrodoku() {
     setTotalTime(0); setVisited(new Set([puzzle.from]));
     setReqStatus(puzzle.req.map(()=>'pending'));
     setQuery(''); setError(null);
-  };
-
-  // Texte de partage façon Wordle : compact, sans divulguer la solution.
-  // Une rangée de pastilles évoque la performance, puis le numéro du jour.
-  const buildShareText = () => {
-    const r = (stats && stats.lastResult) || null;
-    const success = r ? r.success : !hasFailed;
-    const rr = r ? r.ratio : ratio;
-    let medal;
-    if (!success) medal = '❌';
-    else if (rr != null && rr <= 110) medal = '🟩';
-    else if (rr != null && rr <= 135) medal = '🟨';
-    else medal = '🟧';
-    const streakStr = stats && stats.streak ? ` 🔥${stats.streak}` : '';
-    const score = success && rr != null ? `${rr}% de l'optimal` : 'échoué';
-    return `Métroliens #${puzzle.puzzleNo} ${medal} ${score}${streakStr}\n${location.origin}${location.pathname}`;
-  };
-
-  const handleShare = async () => {
-    const text = buildShareText();
-    try {
-      if (navigator.share) {
-        await navigator.share({ text });
-      } else {
-        await navigator.clipboard.writeText(text);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    } catch {
-      // l'utilisateur a annulé le partage, ou API indisponible : on ignore
-    }
   };
 
   const handleUndo = useCallback(() => {
@@ -829,8 +807,12 @@ export default function Metrodoku() {
         display:'flex', alignItems:'baseline', justifyContent:'space-between'}}>
         <div>
           <div style={{fontSize:22, fontWeight:800, letterSpacing:'-0.5px'}}>MÉTROLIENS</div>
-          <div style={{fontSize:11, color:T.muted, marginTop:2, letterSpacing:'0.5px'}}>
-            #{puzzle.puzzleNo} · {dateStr}
+          <div style={{fontSize:11, color:T.muted, marginTop:2, letterSpacing:'0.5px',
+            display:'flex', alignItems:'center', gap:8}}>
+            <span>{dateStr}</span>
+            {stats && stats.streak > 0 && (
+              <span style={{color:T.text, fontWeight:600}}>🔥 {stats.streak}</span>
+            )}
           </div>
         </div>
         {phase==='playing' && (
@@ -1036,41 +1018,23 @@ export default function Metrodoku() {
               ); })()}
             </div>
 
-            {/* Série + partage */}
-            <div style={{padding:'14px 16px', background:T.surf1, borderRadius:12,
-              border:`1px solid ${T.border}`, display:'flex', flexDirection:'column', gap:12}}>
-              {stats && (
-                <div style={{display:'flex', justifyContent:'space-around', textAlign:'center'}}>
-                  <div>
-                    <div style={{fontSize:24, fontWeight:800, color:T.text,
-                      fontVariantNumeric:'tabular-nums'}}>{stats.streak || 0}</div>
-                    <div style={{fontSize:10, color:T.muted, letterSpacing:'0.5px',
-                      textTransform:'uppercase', marginTop:2}}>série 🔥</div>
-                  </div>
-                  <div>
-                    <div style={{fontSize:24, fontWeight:800, color:T.text,
-                      fontVariantNumeric:'tabular-nums'}}>{stats.maxStreak || 0}</div>
-                    <div style={{fontSize:10, color:T.muted, letterSpacing:'0.5px',
-                      textTransform:'uppercase', marginTop:2}}>record</div>
-                  </div>
-                  <div>
-                    <div style={{fontSize:24, fontWeight:800, color:T.text,
-                      fontVariantNumeric:'tabular-nums'}}>{stats.played || 0}</div>
-                    <div style={{fontSize:10, color:T.muted, letterSpacing:'0.5px',
-                      textTransform:'uppercase', marginTop:2}}>parties</div>
-                  </div>
+            {/* Série d'optimaux consécutifs */}
+            {stats && (
+              <div style={{padding:'16px', background:T.surf1, borderRadius:12,
+                border:`1px solid ${T.border}`, textAlign:'center'}}>
+                <div style={{fontSize:32, fontWeight:800, color:T.text,
+                  fontVariantNumeric:'tabular-nums', lineHeight:1}}>
+                  {stats.optimalStreak || 0}
                 </div>
-              )}
-              <button onClick={handleShare} style={{padding:'12px', borderRadius:10,
-                border:'none', background:T.accent, color:'#fff', fontSize:15,
-                fontWeight:700, cursor:'pointer', letterSpacing:'0.3px',
-                fontFamily:'inherit'}}>
-                {copied ? 'Copié ✓' : 'Partager mon résultat'}
-              </button>
-              <div style={{fontSize:11, color:T.dim, textAlign:'center'}}>
-                Prochaine énigme demain.
+                <div style={{fontSize:11, color:T.muted, letterSpacing:'0.5px',
+                  textTransform:'uppercase', marginTop:6}}>
+                  meilleures solutions d'affilée
+                </div>
+                <div style={{fontSize:11, color:T.dim, marginTop:4}}>
+                  Nombre de jours consécutifs où vous avez trouvé l'itinéraire optimal.
+                </div>
               </div>
-            </div>
+            )}
             <div style={{padding:'14px 16px', background:T.surf1, borderRadius:10,
               border:`1px solid ${T.border}`}}>
               <div style={{fontSize:11, color:T.muted, letterSpacing:'0.5px', marginBottom:12}}>
