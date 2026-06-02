@@ -500,7 +500,7 @@ function saveStore(obj) {
 // Enregistre le résultat de la partie du jour et met à jour la série (streak).
 // Renvoie l'état de stats à jour. N'écrase jamais un résultat déjà enregistré
 // pour le même jour (une seule partie par jour).
-function recordResult({ dayK, dayN, puzzleNo, playerTime, optimalTime, ratio, success }) {
+function recordResult({ dayK, dayN, puzzleNo, playerTime, optimalTime, ratio, success, route }) {
   const store = loadStore();
   if (store.lastDay === dayK && store.lastResult) {
     return store; // déjà joué aujourd'hui : on ne réécrit pas
@@ -524,7 +524,9 @@ function recordResult({ dayK, dayN, puzzleNo, playerTime, optimalTime, ratio, su
     maxStreak: Math.max(store.maxStreak || 0, streak),
     played,
     won,
-    lastResult: { puzzleNo, playerTime, optimalTime, ratio, success },
+    // On enregistre aussi l'itinéraire joué, afin de pouvoir le réafficher
+    // (avec la solution) si le joueur revient sur la page le même jour.
+    lastResult: { puzzleNo, playerTime, optimalTime, ratio, success, route },
   };
   saveStore(next);
   return next;
@@ -590,6 +592,15 @@ export default function Metrodoku() {
       setAlreadyDone(true);
       setStats(loadStore());
       setTotalTime(prev.playerTime);
+      // Restaurer l'itinéraire joué pour pouvoir le réafficher avec la solution.
+      if (prev.route && prev.route.length) {
+        setRoute(prev.route);
+        const last = prev.route[prev.route.length - 1];
+        setCurSt(last.st);
+        setCurLine(last.chosenLine ?? null);
+        setVisited(new Set(prev.route.map(s => s.st)));
+        setReqStatus(computeReqStatus(prev.route, puzzle.req, true, puzzle.banned));
+      }
       setPhase('done');
     }
   }, []);
@@ -645,7 +656,7 @@ export default function Metrodoku() {
       const updated = recordResult({
         dayK: dayKey(), dayN: dayNumber(), puzzleNo: puzzle.puzzleNo,
         playerTime: newTime, optimalTime: optimal ? optimal.time : null,
-        ratio, success,
+        ratio, success, route: newRoute,
       });
       setStats(updated);
       setPhase('done');
@@ -954,7 +965,7 @@ export default function Metrodoku() {
                 {fmt(totalTime)}
               </div>
               <div style={{fontSize:13, color:T.muted, marginTop:4}}>votre temps</div>
-              {!alreadyDone && (() => { const {metro,transfers} = timeBreakdown(route.slice(1)); return (
+              {(() => { const {metro,transfers} = timeBreakdown(route.slice(1)); return (
                 <div style={{fontSize:11, color:T.dim, marginTop:6, display:'flex', justifyContent:'center', gap:12}}>
                   <span>🚇 {fmt(metro)} en métro</span>
                   <span>🔄 {fmt(transfers)} de correspondances</span>
@@ -1013,7 +1024,6 @@ export default function Metrodoku() {
                 Prochaine énigme demain.
               </div>
             </div>
-            {!alreadyDone && (<>
             <div style={{padding:'14px 16px', background:T.surf1, borderRadius:10,
               border:`1px solid ${T.border}`}}>
               <div style={{fontSize:11, color:T.muted, letterSpacing:'0.5px', marginBottom:12}}>
@@ -1090,7 +1100,6 @@ export default function Metrodoku() {
                 ))}
               </div>
             )}
-            </>)}
 
           </div>
         )}
