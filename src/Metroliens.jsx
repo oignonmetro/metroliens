@@ -311,6 +311,13 @@ export default function Metrodoku() {
       segs.push({ from: path[i].st, to: path[j].st, ln, stops: j - i });
       i = j; // progression stricte
     }
+    // Marque les correspondances : il n'y a changement de ligne que si le segment
+    // courant emprunte une ligne DIFFÉRENTE du précédent. Une coupure à un arrêt
+    // "passer_par" traversé sur la même ligne n'est PAS une correspondance (la
+    // station est simplement traversée).
+    for (let k = 1; k < segs.length; k++) {
+      segs[k].transfer = segs[k].ln !== segs[k - 1].ln;
+    }
     return segs;
   }
 
@@ -715,14 +722,22 @@ export default function Metrodoku() {
                       <span style={{fontSize:13, color:si===0?T.text:T.muted,
                         fontWeight:si===0?600:400}}>{seg.from}</span>
                     </div>
-                    <div style={{display:'flex', gap:8, margin:'5px 0', alignItems:'center'}}>
+                    <div style={{display:'flex', gap:8, margin:'5px 0', alignItems:'flex-start'}}>
                       <div style={{width:8, flexShrink:0, display:'flex', justifyContent:'center'}}>
                         <div style={{width:1, background:T.border, minHeight:28}}/>
                       </div>
-                      <LineBadge lid={seg.ln} size={22}/>
-                      <span style={{fontSize:11, color:T.dim}}>
-                        {seg.stops} station{seg.stops>1?'s':''}
-                      </span>
+                      <div>
+                        {seg.transfer && (
+                          <div style={{fontSize:10, color:C.warn.fg, marginBottom:4,
+                            letterSpacing:'0.3px'}}>CORRESPONDANCE</div>
+                        )}
+                        <div style={{display:'flex', gap:8, alignItems:'center'}}>
+                          <LineBadge lid={seg.ln} size={22}/>
+                          <span style={{fontSize:11, color:T.dim}}>
+                            {seg.stops} station{seg.stops>1?'s':''}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                     {si===arr.length-1 && (
                       <div style={{display:'flex', alignItems:'center', gap:8}}>
