@@ -154,6 +154,23 @@ export default function Metrodoku() {
     const newRoute = [...route, newStep];
     const newTime = totalTime + newStep.time;
     const newVisited = new Set(visited); newVisited.add(st);
+    // Un saut impossible termine immédiatement la partie (échec) : inutile de
+    // continuer sur un trajet irréel. On affiche directement l'écran de fin.
+    if (newStep.impossible) {
+      setRoute(newRoute);
+      setTotalTime(newTime);
+      setCurSt(st); setCurLine(null);
+      setVisited(newVisited);
+      setReqStatus(computeReqStatus(newRoute, puzzle.req, true, puzzle.banned));
+      const updated = recordResult({
+        dayK: dayKey(), dayN: dayNumber(), puzzleNo: puzzle.puzzleNo,
+        playerTime: newTime, optimalTime: optimal ? optimal.time : null,
+        ratio: null, success: false, route: newRoute,
+      });
+      setStats(updated);
+      setPhase('done');
+      return;
+    }
     // Contrainte "pas_changer" : on bloque dès que le joueur tente de repartir
     // d'une station interdite sur une autre ligne (donc d'y faire sa correspondance).
     // Ne s'applique que sur un segment réellement emprunté (pas un saut impossible).
