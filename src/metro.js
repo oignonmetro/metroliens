@@ -212,7 +212,25 @@ function stopsOnLine(from, to, lid) {
   return Infinity;
 }
 
-function computeSegment(from, to, fromLine, bannedLines) {
+// Station immédiatement voisine de `from` dans la direction de `to`, sur la ligne
+// `lid`. Si `to` est déjà adjacente, c'est `to` elle-même.
+function firstStepOnLine(from, to, lid) {
+  const inter = intermediateStations(from, to, lid);
+  return inter.length ? inter[0] : to;
+}
+
+// Détecte un demi-tour à la station `curSt` : on est arrivé depuis `prevSt` et on
+// repart vers `nextSt` SUR LA MÊME LIGNE `lid`. Si le voisin de `curSt` du côté
+// d'où l'on vient est le même que celui vers où l'on repart, c'est qu'on rebrousse
+// chemin (même direction de départ que d'arrivée) → demi-tour. Sinon on continue
+// tout droit (on traverse la station), ce qui ne coûte rien.
+function isUTurn(prevSt, curSt, nextSt, lid) {
+  if (!prevSt || !nextSt || !lid) return false;
+  if (prevSt === curSt || nextSt === curSt) return false;
+  return firstStepOnLine(curSt, prevSt, lid) === firstStepOnLine(curSt, nextSt, lid);
+}
+
+function computeSegment(from, to, fromLine, bannedLines, prevSt = null) {
   const allLines = directLines(from, to, bannedLines);
   if (!allLines.length) return null;
   let chosenLine = null, stops = Infinity, transfer = false;
@@ -226,7 +244,13 @@ function computeSegment(from, to, fromLine, bannedLines) {
       if (s < stops) { stops = s; chosenLine = l; }
     }
   }
-  return { chosenLine, stops, transfer, time: stops * 90 + (transfer ? 240 : 0), allLines };
+  // Demi-tour : on reste sur la même ligne (pas de correspondance) mais on repart
+  // dans le sens inverse — on « descend » à la station pour reprendre la ligne dans
+  // l'autre direction. Cela coûte 180 s (moins qu'une correspondance à 240 s).
+  // Traverser la station dans le même sens (continuer tout droit) ne coûte rien.
+  const uturn = !transfer && isUTurn(prevSt, from, to, chosenLine);
+  const time = stops * 90 + (transfer ? 240 : 0) + (uturn ? 180 : 0);
+  return { chosenLine, stops, transfer, uturn, time, allLines };
 }
 
 function buildGraph(bannedLines = [], noChangeStations = []) {
@@ -334,21 +358,26 @@ function fmt(s) {
 
 
 function timeBreakdown(routeSteps) {
-  let metro = 0, transfers = 0;
+  let metro = 0, transfers = 0, uturns = 0;
   for (const step of routeSteps) {
     if (step.stops) metro += step.stops * 90;
     if (step.transfer) transfers += 240;
+    if (step.uturn) uturns += 180;
   }
-  return { metro, transfers };
+  return { metro, transfers, uturns };
 }
 
 function optimalBreakdown(path) {
   let metro = 0, transfers = 0;
   for (let i = 1; i < path.length; i++) {
+    // Une correspondance se matérialise par deux nœuds consécutifs sur la même
+    // station mais des lignes différentes (le hop ne fait alors pas avancer).
+    if (path[i].st === path[i-1].st) { transfers += 240; continue; }
     metro += 90;
-    if (path[i].ln !== path[i-1].ln) transfers += 240;
   }
-  return { metro, transfers };
+  // L'itinéraire optimal ne contient jamais de demi-tour (rebrousser chemin n'est
+  // jamais le plus rapide), d'où uturns toujours nul ; renvoyé pour symétrie.
+  return { metro, transfers, uturns: 0 };
 }
 
 export {

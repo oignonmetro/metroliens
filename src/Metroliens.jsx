@@ -135,7 +135,10 @@ export default function Metrodoku() {
 
   const handlePickStation = useCallback((st) => {
     setQuery(''); setError(null);
-    const seg = computeSegment(curSt, st, curLine, puzzle.banned);
+    // Station d'où l'on est arrivé à `curSt` (sur `curLine`), pour détecter un
+    // éventuel demi-tour si l'on repart sur la même ligne dans l'autre sens.
+    const prevSt = route.length >= 2 ? route[route.length - 2].st : null;
+    const seg = computeSegment(curSt, st, curLine, puzzle.banned, prevSt);
     let newStep;
     if (!seg) {
       // Saut impossible (aucune ligne directe, ou seule ligne interdite). On NE
@@ -365,7 +368,8 @@ export default function Metrodoku() {
       if (!cuts.length) {
         transitions.push({
           from: fromSt, to: step.st, lines: step.allLines,
-          stops: step.stops, transfer: step.transfer, multi: step.allLines.length > 1,
+          stops: step.stops, transfer: step.transfer, uturn: step.uturn,
+          multi: step.allLines.length > 1,
         });
         continue;
       }
@@ -374,9 +378,13 @@ export default function Metrodoku() {
       // (les intermediates sont ordonnés entre fromSt (position -1) et step.st).
       let prevSt = fromSt, prevIdx = -1;
       for (const c of cuts) {
+        // La correspondance/le demi-tour éventuel a lieu au tout début du segment
+        // (à fromSt) : on ne l'attache qu'à la première sous-transition.
         transitions.push({
           from: prevSt, to: c.st, lines: step.allLines,
-          stops: c.idx - prevIdx, transfer: prevSt === fromSt ? step.transfer : false,
+          stops: c.idx - prevIdx,
+          transfer: prevSt === fromSt ? step.transfer : false,
+          uturn: prevSt === fromSt ? step.uturn : false,
           multi: step.allLines.length > 1,
         });
         prevSt = c.st; prevIdx = c.idx;
@@ -603,7 +611,7 @@ export default function Metrodoku() {
               ) : ratio<=100 ? (
                 /* Cas optimal : le joueur a trouvé le meilleur trajet. On affiche
                    seulement son temps et son détail (la comparaison serait redondante). */
-                (() => { const {metro,transfers} = timeBreakdown(route.slice(1)); return (
+                (() => { const {metro,transfers,uturns} = timeBreakdown(route.slice(1)); return (
                   <div>
                     <div style={{fontSize:13, fontWeight:700, color:sc.color, marginBottom:10,
                       letterSpacing:'0.3px'}}>
@@ -612,7 +620,7 @@ export default function Metrodoku() {
                     <div style={{fontSize:32, fontWeight:800, color:T.text,
                       fontVariantNumeric:'tabular-nums', lineHeight:1}}>{fmt(totalTime)}</div>
                     <div style={{fontSize:11, color:T.dim, marginTop:6}}>
-                      🚇 {fmt(metro)} · 🔄 {fmt(transfers)}
+                      🚇 {fmt(metro)} · 🔄 {fmt(transfers)}{uturns ? ` · ↩ ${fmt(uturns)}` : ''}
                     </div>
                   </div>
                 ); })()
@@ -631,13 +639,13 @@ export default function Metrodoku() {
                   )}
                   <div style={{margin:'16px auto 0', paddingTop:14, borderTop:`1px solid ${sc.border}`,
                     display:'flex', justifyContent:'center', gap:24, flexWrap:'wrap'}}>
-                    {(() => { const {metro,transfers} = timeBreakdown(route.slice(1)); return (
+                    {(() => { const {metro,transfers,uturns} = timeBreakdown(route.slice(1)); return (
                       <div style={{textAlign:'center'}}>
                         <div style={{fontSize:11, color:T.muted, letterSpacing:'0.3px'}}>VOUS</div>
                         <div style={{fontSize:20, fontWeight:700, color:T.text, marginTop:2,
                           fontVariantNumeric:'tabular-nums'}}>{fmt(totalTime)}</div>
                         <div style={{fontSize:10, color:T.dim, marginTop:3, lineHeight:1.5}}>
-                          🚇 {fmt(metro)}<br/>🔄 {fmt(transfers)}
+                          🚇 {fmt(metro)}<br/>🔄 {fmt(transfers)}{uturns ? <><br/>↩ {fmt(uturns)}</> : null}
                         </div>
                       </div>
                     ); })()}
@@ -695,6 +703,10 @@ export default function Metrodoku() {
                                   {t.transfer && (
                                     <div style={{fontSize:10, color:C.warn.fg, marginBottom:4,
                                       letterSpacing:'0.3px'}}>CORRESPONDANCE</div>
+                                  )}
+                                  {t.uturn && (
+                                    <div style={{fontSize:10, color:T.accent, marginBottom:4,
+                                      letterSpacing:'0.3px'}}>↩ DEMI-TOUR</div>
                                   )}
                                   <div style={{display:'flex', flexWrap:'wrap', gap:5, alignItems:'center'}}>
                                     {t.lines.map(l => <LineBadge key={l} lid={l} size={22}/>)}
