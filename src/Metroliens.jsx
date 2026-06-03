@@ -259,7 +259,7 @@ export default function Metrodoku() {
 
   const ratio = optimal ? Math.round((totalTime / optimal.time) * 100) : null;
   const today = new Date();
-  const dateStr = today.toLocaleDateString('fr-FR',{day:'numeric',month:'long'});
+  const dateStr = today.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
 
   // Statut final des contraintes (calculé seulement quand la partie est finie).
   const finalReqStatus = useMemo(
@@ -794,6 +794,12 @@ export default function Metrodoku() {
 
           </div>
         )}
+      </div>
+
+      {/* PIED DE PAGE */}
+      <div style={{padding:'16px 20px 20px', textAlign:'center', fontSize:10,
+        color:T.dim}}>
+        © 2026, Métroliens. Tous droits réservés.
       </div>
     </div>
   );
