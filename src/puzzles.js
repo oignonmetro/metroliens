@@ -1,4 +1,4 @@
-import { directLines } from './metro.js';
+import { directLines, SEG, buildGraph, findOptimal, linesAt } from './metro.js';
 
 // Calcule le statut de chaque contrainte.
 // `final=false` (pendant le jeu) : les contraintes "passer_par" restent
@@ -54,8 +54,8 @@ const REQ_LABELS = {
   pas_changer:'SANS CHANGER À',
 };
 
-const PUZZLES = [
-  // Tous vérifiés contraignants par assertBinding (voir ci-dessous).
+// Puzzles de secours : utilisés si le générateur échoue après 300 essais.
+const FALLBACK_PUZZLES = [
   { from:'Nation', to:'Saint-Lazare', banned:['1'],
     req:[{st:'Madeleine', type:'changer'}],
     hint:'Sans la 1 — changez à Madeleine.' },
@@ -81,6 +81,187 @@ const PUZZLES = [
     req:[{st:'République', type:'passer_par'}, {st:'Saint-Lazare', type:'pas_changer'}],
     hint:'Par République, mais sans changer à Saint-Lazare.' },
 ];
+
+// ── Générateur déterministe de puzzle quotidien ──────────────────────────
+
+// Générateur pseudo-aléatoire seedé (mulberry32). Toujours initialiser avec
+// dayNumber() pour que le même jour produise le même puzzle partout.
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Stations servant sur au moins 2 lignes (stations de correspondance).
+// Calculé une seule fois au chargement du module.
+const INTERCHANGE_STATIONS = (() => {
+  const stSet = new Set();
+  for (const segs of Object.values(SEG))
+    for (const seg of segs)
+      for (const st of seg)
+        stSet.add(st);
+  return [...stSet].filter(st => linesAt(st).length >= 2).sort();
+})();
+
+// Toutes les lignes du réseau.
+const ALL_LINES = Object.keys(SEG);
+
+// Profil de difficulté selon le jour de la semaine.
+// 2025-01-01 (epoch, dayNumber=0) est un mercredi → offset +2 pour que 0=lundi.
+function getProfile(dayN) {
+  const dow = ((dayN + 2) % 7 + 7) % 7; // 0=lundi … 6=dimanche
+  if (dow === 0) return { nbReq: 1, types: ['passer_par'],                              minBase: 600,  allowBanned: false };
+  if (dow === 1) return { nbReq: 1, types: ['passer_par','changer'],                   minBase: 600,  allowBanned: false };
+  if (dow === 2) return { nbReq: 1, types: ['passer_par','changer','pas_changer'],      minBase: 720,  allowBanned: false };
+  if (dow === 3) return { nbReq: 'rand', types: ['passer_par','changer','pas_changer'], minBase: 720, allowBanned: false };
+  if (dow === 4) return { nbReq: 2, types: ['passer_par','changer','pas_changer'],      minBase: 720,  allowBanned: false };
+  if (dow === 5) return { nbReq: 2, types: ['passer_par','changer','pas_changer'],      minBase: 840,  allowBanned: true  };
+                 return { nbReq: 2, types: ['passer_par','changer','pas_changer'],      minBase: 900,  allowBanned: true  };
+}
+
+function pickRand(arr, rand) { return arr[Math.floor(rand() * arr.length)]; }
+
+// Retourne true si le chemin optimal emprunte une des lignes indiquées.
+function pathUsesLines(path, lines) {
+  return path.some(node => lines.includes(node.ln));
+}
+
+// Génère le puzzle du jour de façon déterministe à partir de dayN.
+function generatePuzzle(dayN) {
+  const rand = mulberry32(dayN);
+  const profile = getProfile(dayN);
+  // Jeudi : le rand est appelé une fois pour le nbReq, il faut le faire avec rand()
+  const nbReq = (profile.nbReq === 'rand') ? (rand() < 0.5 ? 1 : 2) : profile.nbReq;
+
+  const MAX_TRIES = 300;
+
+  for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
+    // 1. Tirer la paire (from, to)
+    const from = pickRand(INTERCHANGE_STATIONS, rand);
+    const to   = pickRand(INTERCHANGE_STATIONS, rand);
+    if (from === to) continue;
+
+    // 2. Décider si on bannit une ligne (selon profil)
+    let banned = [];
+    if (profile.allowBanned && rand() < 0.5) {
+      const candidateLine = pickRand(ALL_LINES, rand);
+      banned = [candidateLine];
+    }
+
+    // 3. Optimal libre (sans contraintes, avec éventuellement la ligne bannie)
+    const { adj, sl } = buildGraph(banned);
+    const baseOpt = findOptimal(adj, sl, from, to, []);
+    if (!baseOpt || baseOpt.time < profile.minBase) continue;
+
+    // 4. Si ligne bannie : vérifier qu'elle est effectivement contraignante
+    //    (l'optimal sans bannissement l'empruie)
+    if (banned.length > 0) {
+      const { adj: adjFull, sl: slFull } = buildGraph([]);
+      const freeOpt = findOptimal(adjFull, slFull, from, to, []);
+      if (!freeOpt || !pathUsesLines(freeOpt.path, banned)) continue;
+    }
+
+    // 5. Construire les contraintes une à une
+    const req = [];
+    let valid = true;
+
+    for (let ri = 0; ri < nbReq; ri++) {
+      // Éviter les doublons de station dans les contraintes
+      const usedStations = req.map(r => r.st);
+
+      // Choisir le type parmi ceux disponibles pour ce profil
+      // Pour pas_changer : on ne l'autorise que s'il en reste de la place
+      const availableTypes = profile.types.filter(t => {
+        if (t === 'pas_changer' && req.some(r => r.type === 'pas_changer')) return false;
+        if (t === 'changer'     && req.some(r => r.type === 'changer'))     return false;
+        return true;
+      });
+      if (!availableTypes.length) { valid = false; break; }
+      const type = pickRand(availableTypes, rand);
+
+      // Calculer l'optimal courant avec les contraintes déjà accumulées
+      const noChangeSts = req.filter(r => r.type === 'pas_changer').map(r => r.st);
+      const curGraph = buildGraph(banned, noChangeSts);
+      const curOpt = findOptimal(curGraph.adj, curGraph.sl, from, to,
+                                  req.filter(r => r.type !== 'pas_changer'));
+      if (!curOpt) { valid = false; break; }
+
+      // Trouver une station candidate contraignante
+      // Préférence : stations sur le chemin optimal courant (pour passer_par/changer)
+      //              ou stations où l'optimal courant change de ligne (pour pas_changer)
+      let candidateSt = null;
+      const pathStations = curOpt.path.map(p => p.st).filter(s =>
+        s !== from && s !== to && !usedStations.includes(s)
+      );
+      const interchangesOnPath = pathStations.filter(s => linesAt(s).length >= 2);
+
+      if (type === 'pas_changer') {
+        // Trouver une station où l'optimal courant change de ligne
+        const changeStations = [];
+        for (let i = 1; i < curOpt.path.length - 1; i++) {
+          const p = curOpt.path[i];
+          if (p.st !== from && p.st !== to &&
+              !usedStations.includes(p.st) &&
+              curOpt.path[i-1].st === p.st && curOpt.path[i].ln !== curOpt.path[i-1].ln) {
+            changeStations.push(p.st);
+          }
+        }
+        // Aussi détecter les changements via les nœuds consécutifs différents
+        for (let i = 1; i < curOpt.path.length; i++) {
+          const prev = curOpt.path[i-1], cur = curOpt.path[i];
+          if (prev.st !== cur.st) continue; // pas le même nœud
+          if (cur.st === from || cur.st === to) continue;
+          if (usedStations.includes(cur.st)) continue;
+          if (!changeStations.includes(cur.st)) changeStations.push(cur.st);
+        }
+        if (!changeStations.length) { valid = false; break; }
+        candidateSt = pickRand(changeStations, rand);
+      } else if (type === 'passer_par') {
+        // Station pas déjà sur le chemin de baseOpt
+        const notOnPath = INTERCHANGE_STATIONS.filter(s =>
+          s !== from && s !== to && !usedStations.includes(s) &&
+          !pathPassesThrough(baseOpt.path, s)
+        );
+        if (!notOnPath.length) { valid = false; break; }
+        candidateSt = pickRand(notOnPath, rand);
+      } else { // changer
+        // Station d'interchange sur le chemin courant où l'optimal ne change pas déjà
+        const notChanging = interchangesOnPath.filter(s =>
+          !pathChangesAt(curOpt.path, s)
+        );
+        if (!notChanging.length) { valid = false; break; }
+        candidateSt = pickRand(notChanging, rand);
+      }
+
+      const r = { st: candidateSt, type };
+
+      // Vérifier que la contrainte est bien contraignante vs baseOpt
+      if (!isConstraintBinding(r, baseOpt)) { valid = false; break; }
+
+      req.push(r);
+    }
+
+    if (!valid || req.length !== nbReq) continue;
+
+    // 6. Vérification finale : puzzle soluble avec toutes les contraintes combinées
+    const noChangeSts = req.filter(r => r.type === 'pas_changer').map(r => r.st);
+    const finalGraph = buildGraph(banned, noChangeSts);
+    const finalOpt = findOptimal(finalGraph.adj, finalGraph.sl, from, to,
+                                  req.filter(r => r.type !== 'pas_changer'));
+    if (!finalOpt) continue;
+
+    return { from, to, banned, req };
+  }
+
+  // Filet de sécurité
+  return FALLBACK_PUZZLES[((dayN % FALLBACK_PUZZLES.length) + FALLBACK_PUZZLES.length) % FALLBACK_PUZZLES.length];
+}
+
+// Alias pour la compatibilité avec les exports existants
+const PUZZLES = FALLBACK_PUZZLES;
 
 
 // ── Vérification du caractère contraignant d'une contrainte ──────────────
@@ -135,9 +316,8 @@ function dayKey(date = new Date()) {
 
 function getDailyPuzzle() {
   const n = dayNumber();
-  // Numéro de puzzle affiché au joueur (commence à 1).
-  const index = ((n % PUZZLES.length) + PUZZLES.length) % PUZZLES.length;
-  return { ...PUZZLES[index], puzzleNo: n + 1, index };
+  const puzzle = generatePuzzle(n);
+  return { ...puzzle, puzzleNo: n + 1, index: n };
 }
 
 // ── Stockage local sûr ───────────────────────────────────────────────────
@@ -215,7 +395,7 @@ function todaysResult(dayK) {
 }
 
 export {
-  computeReqStatus, REQ_LABELS, PUZZLES, pathPassesThrough, pathChangesAt,
-  isConstraintBinding, dayNumber, dayKey, getDailyPuzzle,
+  computeReqStatus, REQ_LABELS, PUZZLES, FALLBACK_PUZZLES, pathPassesThrough, pathChangesAt,
+  isConstraintBinding, dayNumber, dayKey, getDailyPuzzle, generatePuzzle,
   loadStore, saveStore, recordResult, todaysResult,
 };
