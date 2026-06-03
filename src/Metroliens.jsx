@@ -647,7 +647,7 @@ export default function Metrodoku() {
                     display:'flex', justifyContent:'center', gap:24, flexWrap:'wrap'}}>
                     {(() => { const {metro,transfers,uturns} = timeBreakdown(route.slice(1)); return (
                       <div style={{textAlign:'center'}}>
-                        <div style={{fontSize:11, color:T.muted, letterSpacing:'0.3px'}}>VOUS</div>
+                        <div style={{fontSize:11, color:T.muted, letterSpacing:'0.3px'}}>ITINÉRAIRE PROPOSÉ</div>
                         <div style={{fontSize:20, fontWeight:700, color:T.text, marginTop:2,
                           fontVariantNumeric:'tabular-nums'}}>{fmt(totalTime)}</div>
                         <div style={{fontSize:10, color:T.dim, marginTop:3, lineHeight:1.5}}>
@@ -657,7 +657,7 @@ export default function Metrodoku() {
                     ); })()}
                     {(() => { const {metro,transfers,uturns} = optimalBreakdown(optimal.path); return (
                       <div style={{textAlign:'center'}}>
-                        <div style={{fontSize:11, color:T.muted, letterSpacing:'0.3px'}}>OPTIMAL</div>
+                        <div style={{fontSize:11, color:T.muted, letterSpacing:'0.3px'}}>TRAJET LE PLUS RAPIDE</div>
                         <div style={{fontSize:20, fontWeight:700, color:T.text, marginTop:2,
                           fontVariantNumeric:'tabular-nums'}}>{fmt(optimal.time)}</div>
                         <div style={{fontSize:10, color:T.dim, marginTop:3, lineHeight:1.5}}>
@@ -747,7 +747,7 @@ export default function Metrodoku() {
               <div style={{padding:'14px 16px', background:T.surf1, borderRadius:10,
                 border:`1px solid ${T.border}`}}>
                 <div style={{fontSize:11, color:T.muted, letterSpacing:'0.5px', marginBottom:12}}>
-                  ITINÉRAIRE OPTIMAL
+                  TRAJET LE PLUS RAPIDE
                 </div>
                 {optimalSegments(optimal.path).map((seg, si, arr) => (
                   <div key={si}>
@@ -767,7 +767,7 @@ export default function Metrodoku() {
                             letterSpacing:'0.3px'}}>CORRESPONDANCE</div>
                         )}
                         {seg.uturn && (
-                          <div style={{fontSize:10, color:T.accent, marginBottom:4,
+                          <div style={{fontSize:10, color:T.muted, marginBottom:4,
                             letterSpacing:'0.3px'}}>↩ DEMI-TOUR</div>
                         )}
                         <div style={{display:'flex', gap:8, alignItems:'center'}}>
