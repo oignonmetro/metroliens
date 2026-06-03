@@ -319,6 +319,23 @@ function perms(arr) {
   return arr.flatMap((x,i) => perms([...arr.slice(0,i),...arr.slice(i+1)]).map(p => [x,...p]));
 }
 
+// Indices d'un chemin où l'itinéraire fait demi-tour : on revient vers la station
+// d'où l'on venait, sur la MÊME ligne (le nœud précédent et le nœud suivant sont la
+// même station, même ligne de part et d'autre). Un demi-tour apparaît typiquement
+// quand une contrainte "passer_par" force à aller chercher une station puis revenir.
+function uturnIndices(path) {
+  const res = [];
+  for (let i = 1; i < path.length - 1; i++) {
+    if (path[i - 1].st === path[i + 1].st &&
+        path[i - 1].ln === path[i].ln && path[i].ln === path[i + 1].ln) {
+      res.push(i);
+    }
+  }
+  return res;
+}
+function countUTurns(path) { return uturnIndices(path).length; }
+function uturnStations(path) { return new Set(uturnIndices(path).map(i => path[i].st)); }
+
 // req peut être soit une liste de noms de stations (waypoints simples),
 // soit une liste d'objets {st, type}. Pour un waypoint de type "changer",
 // on impose un vrai changement de ligne à cette station (la ligne par laquelle
@@ -346,7 +363,13 @@ function findOptimal(adj, sl, from, to, req = []) {
       arrivalLine = r.path[r.path.length - 1].ln;
       fp = i === 0 ? r.path : [...fp, ...r.path.slice(1)];
     }
-    if (ok && (!best || total < best.time)) best = {time: total, path: fp};
+    // Un demi-tour (rebroussement sur la même ligne, imposé par exemple par un
+    // "passer_par" en cul-de-sac) coûte 180 s, à intégrer avant de comparer les
+    // permutations pour choisir réellement la plus rapide.
+    if (ok) {
+      const t = total + 180 * countUTurns(fp);
+      if (!best || t < best.time) best = { time: t, path: fp };
+    }
   }
   return best;
 }
@@ -375,13 +398,13 @@ function optimalBreakdown(path) {
     if (path[i].st === path[i-1].st) { transfers += 240; continue; }
     metro += 90;
   }
-  // L'itinéraire optimal ne contient jamais de demi-tour (rebrousser chemin n'est
-  // jamais le plus rapide), d'où uturns toujours nul ; renvoyé pour symétrie.
-  return { metro, transfers, uturns: 0 };
+  // Un "passer_par" en cul-de-sac peut forcer l'optimal à rebrousser chemin : on
+  // compte alors les demi-tours (180 s chacun), pour que le détail somme au temps.
+  return { metro, transfers, uturns: 180 * countUTurns(path) };
 }
 
 export {
   SEG, LM, lineAdj, intermediateStations, directLines, linesAt,
   stopsOnLine, computeSegment, buildGraph, dijkstra, perms, findOptimal,
-  fmt, timeBreakdown, optimalBreakdown,
+  fmt, timeBreakdown, optimalBreakdown, countUTurns, uturnStations,
 };
