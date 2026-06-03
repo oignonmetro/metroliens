@@ -424,19 +424,10 @@ export default function Metrodoku() {
             )}
           </div>
         </div>
-        {phase==='playing' && (
-          <div style={{display:'flex', alignItems:'center', gap:10}}>
-            {totalTime>0 && (
-              <span style={{fontSize:13, color:T.muted, fontVariantNumeric:'tabular-nums'}}>
-                {fmt(totalTime)}
-              </span>
-            )}
-            <button onClick={handleRestart} style={{fontSize:11, color:T.muted,
-              background:'none', border:`1px solid ${T.border}`, borderRadius:6,
-              padding:'4px 10px', cursor:'pointer'}}>
-              Recommencer
-            </button>
-          </div>
+        {phase==='playing' && totalTime>0 && (
+          <span style={{fontSize:13, color:T.muted, fontVariantNumeric:'tabular-nums'}}>
+            {fmt(totalTime)}
+          </span>
         )}
       </div>
 
@@ -536,13 +527,22 @@ export default function Metrodoku() {
                       <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:8}}>
                         <div style={{fontSize:isLast?15:13, fontWeight:isLast?600:400,
                           color:isLast?T.text:T.muted}}>{step.st}</div>
-                        {isLast && i > 0 && (
-                          <button onClick={handleUndo} style={{
-                            flexShrink:0, fontSize:11, color:T.dim,
-                            background:'none', border:`1px solid ${T.border}`,
-                            borderRadius:6, padding:'2px 8px', cursor:'pointer',
-                            lineHeight:1.5,
-                          }}>↩ annuler</button>
+                        {isLast && (
+                          <div style={{display:'flex', alignItems:'center', gap:8, flexShrink:0}}>
+                            {i > 0 && (
+                              <button onClick={handleUndo} style={{
+                                flexShrink:0, fontSize:11, color:T.dim,
+                                background:'none', border:`1px solid ${T.border}`,
+                                borderRadius:6, padding:'2px 8px', cursor:'pointer',
+                                lineHeight:1.5,
+                              }}>↩ annuler</button>
+                            )}
+                            <button onClick={handleRestart} style={{fontSize:11, color:T.muted,
+                              background:'none', border:`1px solid ${T.border}`, borderRadius:6,
+                              padding:'4px 10px', cursor:'pointer'}}>
+                              Recommencer
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
