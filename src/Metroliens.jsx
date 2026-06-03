@@ -742,8 +742,8 @@ export default function Metrodoku() {
               })()}
             </div>
 
-            {/* Itinéraire optimal (si différent) */}
-            {ratio>100 && (
+            {/* Itinéraire optimal (si différent ou si invalide) */}
+            {(hasFailed || ratio>100) && (
               <div style={{padding:'14px 16px', background:T.surf1, borderRadius:10,
                 border:`1px solid ${T.border}`}}>
                 <div style={{fontSize:11, color:T.muted, letterSpacing:'0.5px', marginBottom:12}}>
