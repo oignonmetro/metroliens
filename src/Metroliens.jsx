@@ -637,6 +637,9 @@ export default function Metrodoku() {
                     lineHeight:1}}>
                     +{ratio-100}%
                   </div>
+                  <div style={{fontSize:11, color:T.dim, marginTop:6}}>
+                    soit {fmt(totalTime - optimal.time)} de plus que le trajet le plus rapide
+                  </div>
                   {scLabel && (
                     <div style={{fontSize:13, fontWeight:700, color:sc.color, marginTop:8,
                       letterSpacing:'0.3px'}}>
