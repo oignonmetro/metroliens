@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import {
   SEG, LM, intermediateStations, linesAt, computeSegment,
   buildGraph, findOptimal, fmt, timeBreakdown, optimalBreakdown, directLines,
+  uturnStations,
 } from "./metro.js";
 import {
   computeReqStatus, REQ_LABELS, isConstraintBinding,
@@ -334,9 +335,13 @@ export default function Metrodoku() {
     // Marque les correspondances : il n'y a changement de ligne que si le segment
     // courant emprunte une ligne DIFFÉRENTE du précédent. Une coupure à un arrêt
     // "passer_par" traversé sur la même ligne n'est PAS une correspondance (la
-    // station est simplement traversée).
+    // station est simplement traversée). Un demi-tour (rebroussement sur la même
+    // ligne, ex. "passer_par" en cul-de-sac) est repéré via uturnStations : la
+    // station de coupure y figure et les deux segments partagent la même ligne.
+    const turns = uturnStations(path);
     for (let k = 1; k < segs.length; k++) {
       segs[k].transfer = segs[k].ln !== segs[k - 1].ln;
+      segs[k].uturn = !segs[k].transfer && turns.has(segs[k].from);
     }
     return segs;
   }
@@ -649,13 +654,13 @@ export default function Metrodoku() {
                         </div>
                       </div>
                     ); })()}
-                    {(() => { const {metro,transfers} = optimalBreakdown(optimal.path); return (
+                    {(() => { const {metro,transfers,uturns} = optimalBreakdown(optimal.path); return (
                       <div style={{textAlign:'center'}}>
                         <div style={{fontSize:11, color:T.muted, letterSpacing:'0.3px'}}>OPTIMAL</div>
                         <div style={{fontSize:20, fontWeight:700, color:T.text, marginTop:2,
                           fontVariantNumeric:'tabular-nums'}}>{fmt(optimal.time)}</div>
                         <div style={{fontSize:10, color:T.dim, marginTop:3, lineHeight:1.5}}>
-                          🚇 {fmt(metro)}<br/>🔄 {fmt(transfers)}
+                          🚇 {fmt(metro)}<br/>🔄 {fmt(transfers)}{uturns ? <><br/>↩ {fmt(uturns)}</> : null}
                         </div>
                       </div>
                     ); })()}
@@ -757,8 +762,12 @@ export default function Metrodoku() {
                       </div>
                       <div>
                         {seg.transfer && (
-                          <div style={{fontSize:10, color:C.warn.fg, marginBottom:4,
+                          <div style={{fontSize:10, color:T.muted, marginBottom:4,
                             letterSpacing:'0.3px'}}>CORRESPONDANCE</div>
+                        )}
+                        {seg.uturn && (
+                          <div style={{fontSize:10, color:T.accent, marginBottom:4,
+                            letterSpacing:'0.3px'}}>↩ DEMI-TOUR</div>
                         )}
                         <div style={{display:'flex', gap:8, alignItems:'center'}}>
                           <LineBadge lid={seg.ln} size={22}/>
