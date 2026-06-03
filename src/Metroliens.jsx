@@ -329,7 +329,8 @@ export default function Metrodoku() {
       ) {
         j++;
       }
-      segs.push({ from: path[i].st, to: path[j].st, ln, stops: j - i });
+      const transferAtStart = (i + 1 < path.length && path[i].st === path[i + 1].st) ? 1 : 0;
+      segs.push({ from: path[i].st, to: path[j].st, ln, stops: j - i - transferAtStart });
       i = j; // progression stricte
     }
     // Marque les correspondances : il n'y a changement de ligne que si le segment
