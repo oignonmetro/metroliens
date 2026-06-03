@@ -285,10 +285,15 @@ export default function Metrodoku() {
     :              'Trop long';
 
   // Regroupe le chemin Dijkstra en segments de même ligne, en coupant aussi
-  // aux arrêts obligatoires (puzzle.req) pour qu'ils apparaissent comme nœuds.
+  // aux arrêts obligatoires "passer_par"/"changer" (puzzle.req) pour qu'ils
+  // apparaissent comme nœuds. On EXCLUT les stations "pas_changer" : les forcer
+  // comme nœuds laisserait croire à un changement là où, justement, le trajet
+  // ne change pas de ligne (il ne fait que traverser la station).
   // L'index avance strictement (i = j) pour éviter toute boucle infinie.
   function optimalSegments(path) {
-    const forced = new Set(puzzle.req.map(r => r.st));
+    const forced = new Set(
+      puzzle.req.filter(r => r.type !== 'pas_changer').map(r => r.st)
+    );
     const segs = [];
     let i = 0;
     while (i < path.length - 1) {
