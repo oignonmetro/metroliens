@@ -259,7 +259,7 @@ export default function Metrodoku() {
 
   const ratio = optimal ? Math.round((totalTime / optimal.time) * 100) : null;
   const today = new Date();
-  const dateStr = today.toLocaleDateString('fr-FR',{day:'numeric',month:'long'});
+  const dateStr = today.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
 
   // Statut final des contraintes (calculé seulement quand la partie est finie).
   const finalReqStatus = useMemo(
@@ -424,19 +424,10 @@ export default function Metrodoku() {
             )}
           </div>
         </div>
-        {phase==='playing' && (
-          <div style={{display:'flex', alignItems:'center', gap:10}}>
-            {totalTime>0 && (
-              <span style={{fontSize:13, color:T.muted, fontVariantNumeric:'tabular-nums'}}>
-                {fmt(totalTime)}
-              </span>
-            )}
-            <button onClick={handleRestart} style={{fontSize:11, color:T.muted,
-              background:'none', border:`1px solid ${T.border}`, borderRadius:6,
-              padding:'4px 10px', cursor:'pointer'}}>
-              Recommencer
-            </button>
-          </div>
+        {phase==='playing' && totalTime>0 && (
+          <span style={{fontSize:13, color:T.muted, fontVariantNumeric:'tabular-nums'}}>
+            {fmt(totalTime)}
+          </span>
         )}
       </div>
 
@@ -536,13 +527,22 @@ export default function Metrodoku() {
                       <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:8}}>
                         <div style={{fontSize:isLast?15:13, fontWeight:isLast?600:400,
                           color:isLast?T.text:T.muted}}>{step.st}</div>
-                        {isLast && i > 0 && (
-                          <button onClick={handleUndo} style={{
-                            flexShrink:0, fontSize:11, color:T.dim,
-                            background:'none', border:`1px solid ${T.border}`,
-                            borderRadius:6, padding:'2px 8px', cursor:'pointer',
-                            lineHeight:1.5,
-                          }}>↩ annuler</button>
+                        {isLast && (
+                          <div style={{display:'flex', alignItems:'center', gap:8, flexShrink:0}}>
+                            {i > 0 && (
+                              <button onClick={handleUndo} style={{
+                                flexShrink:0, fontSize:11, color:T.dim,
+                                background:'none', border:`1px solid ${T.border}`,
+                                borderRadius:6, padding:'2px 8px', cursor:'pointer',
+                                lineHeight:1.5,
+                              }}>↩ annuler</button>
+                            )}
+                            <button onClick={handleRestart} style={{fontSize:11, color:T.muted,
+                              background:'none', border:`1px solid ${T.border}`, borderRadius:6,
+                              padding:'4px 10px', cursor:'pointer'}}>
+                              Recommencer
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -636,6 +636,9 @@ export default function Metrodoku() {
                   <div style={{fontSize:40, fontWeight:800, letterSpacing:'-1.5px', color:sc.color,
                     lineHeight:1}}>
                     +{ratio-100}%
+                  </div>
+                  <div style={{fontSize:11, color:T.dim, marginTop:6}}>
+                    soit {fmt(totalTime - optimal.time)} de plus que le trajet le plus rapide
                   </div>
                   {scLabel && (
                     <div style={{fontSize:13, fontWeight:700, color:sc.color, marginTop:8,
@@ -791,6 +794,12 @@ export default function Metrodoku() {
 
           </div>
         )}
+      </div>
+
+      {/* PIED DE PAGE */}
+      <div style={{padding:'16px 20px 20px', textAlign:'center', fontSize:10,
+        color:T.dim}}>
+        © 2026, Métroliens. Tous droits réservés.
       </div>
     </div>
   );
