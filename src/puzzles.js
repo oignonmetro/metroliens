@@ -34,14 +34,12 @@ function computeReqStatus(routeSteps, req, final = false, banned = []) {
       return canChange ? 'satisfied' : 'failed';
     }
     if (r.type === 'pas_changer') {
-      // Interdit de FAIRE SA CORRESPONDANCE à X. Traverser X sur une ligne (sans
-      // y changer) reste autorisé. La faute n'existe que si X est saisi comme nœud
-      // intérieur du trajet ET que le joueur y change de ligne (le segment suivant
-      // est une correspondance). Tant que X n'est pas un point de changement saisi,
-      // la contrainte est respectée.
+      // Interdit de FAIRE SA CORRESPONDANCE à X. Pendant le jeu, on n'évalue
+      // la contrainte qu'à la fin (comme passer_par) pour ne pas afficher le
+      // trait barré avant que le trajet soit complet.
+      if (!final) return 'pending';
       const idx = routeSteps.findIndex((s, i) => i > 0 && i < routeSteps.length - 1 && s.st === r.st);
       if (idx === -1) return 'satisfied'; // X n'est pas un nœud intérieur : OK
-      // X est un nœud intérieur : il y a faute s'il sert de correspondance.
       return routeSteps[idx + 1].transfer ? 'failed' : 'satisfied';
     }
     return 'pending';
