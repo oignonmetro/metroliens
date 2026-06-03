@@ -154,6 +154,23 @@ export default function Metrodoku() {
     const newRoute = [...route, newStep];
     const newTime = totalTime + newStep.time;
     const newVisited = new Set(visited); newVisited.add(st);
+    // Un saut impossible termine immédiatement la partie (échec) : inutile de
+    // continuer sur un trajet irréel. On affiche directement l'écran de fin.
+    if (newStep.impossible) {
+      setRoute(newRoute);
+      setTotalTime(newTime);
+      setCurSt(st); setCurLine(null);
+      setVisited(newVisited);
+      setReqStatus(computeReqStatus(newRoute, puzzle.req, true, puzzle.banned));
+      const updated = recordResult({
+        dayK: dayKey(), dayN: dayNumber(), puzzleNo: puzzle.puzzleNo,
+        playerTime: newTime, optimalTime: optimal ? optimal.time : null,
+        ratio: null, success: false, route: newRoute,
+      });
+      setStats(updated);
+      setPhase('done');
+      return;
+    }
     // Contrainte "pas_changer" : on bloque dès que le joueur tente de repartir
     // d'une station interdite sur une autre ligne (donc d'y faire sa correspondance).
     // Ne s'applique que sur un segment réellement emprunté (pas un saut impossible).
@@ -285,10 +302,15 @@ export default function Metrodoku() {
     :              'Trop long';
 
   // Regroupe le chemin Dijkstra en segments de même ligne, en coupant aussi
-  // aux arrêts obligatoires (puzzle.req) pour qu'ils apparaissent comme nœuds.
+  // aux arrêts obligatoires "passer_par"/"changer" (puzzle.req) pour qu'ils
+  // apparaissent comme nœuds. On EXCLUT les stations "pas_changer" : les forcer
+  // comme nœuds laisserait croire à un changement là où, justement, le trajet
+  // ne change pas de ligne (il ne fait que traverser la station).
   // L'index avance strictement (i = j) pour éviter toute boucle infinie.
   function optimalSegments(path) {
-    const forced = new Set(puzzle.req.map(r => r.st));
+    const forced = new Set(
+      puzzle.req.filter(r => r.type !== 'pas_changer').map(r => r.st)
+    );
     const segs = [];
     let i = 0;
     while (i < path.length - 1) {
@@ -305,6 +327,13 @@ export default function Metrodoku() {
       }
       segs.push({ from: path[i].st, to: path[j].st, ln, stops: j - i });
       i = j; // progression stricte
+    }
+    // Marque les correspondances : il n'y a changement de ligne que si le segment
+    // courant emprunte une ligne DIFFÉRENTE du précédent. Une coupure à un arrêt
+    // "passer_par" traversé sur la même ligne n'est PAS une correspondance (la
+    // station est simplement traversée).
+    for (let k = 1; k < segs.length; k++) {
+      segs[k].transfer = segs[k].ln !== segs[k - 1].ln;
     }
     return segs;
   }
@@ -710,14 +739,22 @@ export default function Metrodoku() {
                       <span style={{fontSize:13, color:si===0?T.text:T.muted,
                         fontWeight:si===0?600:400}}>{seg.from}</span>
                     </div>
-                    <div style={{display:'flex', gap:8, margin:'5px 0', alignItems:'center'}}>
+                    <div style={{display:'flex', gap:8, margin:'5px 0', alignItems:'flex-start'}}>
                       <div style={{width:8, flexShrink:0, display:'flex', justifyContent:'center'}}>
                         <div style={{width:1, background:T.border, minHeight:28}}/>
                       </div>
-                      <LineBadge lid={seg.ln} size={22}/>
-                      <span style={{fontSize:11, color:T.dim}}>
-                        {seg.stops} station{seg.stops>1?'s':''}
-                      </span>
+                      <div>
+                        {seg.transfer && (
+                          <div style={{fontSize:10, color:C.warn.fg, marginBottom:4,
+                            letterSpacing:'0.3px'}}>CORRESPONDANCE</div>
+                        )}
+                        <div style={{display:'flex', gap:8, alignItems:'center'}}>
+                          <LineBadge lid={seg.ln} size={22}/>
+                          <span style={{fontSize:11, color:T.dim}}>
+                            {seg.stops} station{seg.stops>1?'s':''}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                     {si===arr.length-1 && (
                       <div style={{display:'flex', alignItems:'center', gap:8}}>
