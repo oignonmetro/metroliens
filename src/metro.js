@@ -253,8 +253,9 @@ function computeSegment(from, to, fromLine, bannedLines, prevSt = null) {
   return { chosenLine, stops, transfer, uturn, time, allLines };
 }
 
-function buildGraph(bannedLines = [], noChangeStations = []) {
+function buildGraph(bannedLines = [], noChangeStations = [], bannedStations = []) {
   const noChange = new Set(noChangeStations);
+  const banned   = new Set(bannedStations);
   const adj = {}, sl = {};
   const add = (a, b, t) => {
     if (!adj[a]) adj[a] = []; if (!adj[b]) adj[b] = [];
@@ -265,6 +266,9 @@ function buildGraph(bannedLines = [], noChangeStations = []) {
     for (const seg of segs) {
       for (let i = 0; i < seg.length - 1; i++) {
         const a = seg[i], b = seg[i+1];
+        // Stations bannies ("pas_passer_par") : on retire complètement leurs nœuds
+        // du graphe, Dijkstra ne peut donc jamais les traverser.
+        if (banned.has(a) || banned.has(b)) continue;
         add(`${a}|||${lid}`, `${b}|||${lid}`, 90);
         if (!sl[a]) sl[a] = new Set(); if (!sl[b]) sl[b] = new Set();
         sl[a].add(lid); sl[b].add(lid);
