@@ -365,7 +365,21 @@ function findOptimal(adj, sl, from, to, req = []) {
       if (!r) { ok = false; break; }
       total += r.time;
       arrivalLine = r.path[r.path.length - 1].ln;
-      fp = i === 0 ? r.path : [...fp, ...r.path.slice(1)];
+      if (i === 0) {
+        fp = r.path;
+      } else {
+        // Si le premier nœud du nouveau segment est sur une ligne différente de
+        // arrivalLine, il y a une correspondance à la station charnière que le
+        // path reconstruction n'a pas matérialisée (le nœud de départ du segment
+        // était initialisé directement à coût 240 sans prédécesseur dans dijkstra).
+        // On injecte ce nœud explicitement pour que optimalBreakdown le voie.
+        const segStart = r.path[0];
+        if (segStart.ln !== (fp[fp.length - 1]?.ln ?? segStart.ln)) {
+          fp = [...fp, segStart, ...r.path.slice(1)];
+        } else {
+          fp = [...fp, ...r.path.slice(1)];
+        }
+      }
     }
     // Un demi-tour (rebroussement sur la même ligne, imposé par exemple par un
     // "passer_par" en cul-de-sac) coûte 180 s, à intégrer avant de comparer les
