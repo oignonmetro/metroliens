@@ -253,8 +253,9 @@ function computeSegment(from, to, fromLine, bannedLines, prevSt = null) {
   return { chosenLine, stops, transfer, uturn, time, allLines };
 }
 
-function buildGraph(bannedLines = [], noChangeStations = []) {
+function buildGraph(bannedLines = [], noChangeStations = [], bannedStations = []) {
   const noChange = new Set(noChangeStations);
+  const banned   = new Set(bannedStations);
   const adj = {}, sl = {};
   const add = (a, b, t) => {
     if (!adj[a]) adj[a] = []; if (!adj[b]) adj[b] = [];
@@ -265,6 +266,9 @@ function buildGraph(bannedLines = [], noChangeStations = []) {
     for (const seg of segs) {
       for (let i = 0; i < seg.length - 1; i++) {
         const a = seg[i], b = seg[i+1];
+        // Stations bannies ("pas_passer_par") : on retire complètement leurs nœuds
+        // du graphe, Dijkstra ne peut donc jamais les traverser.
+        if (banned.has(a) || banned.has(b)) continue;
         add(`${a}|||${lid}`, `${b}|||${lid}`, 90);
         if (!sl[a]) sl[a] = new Set(); if (!sl[b]) sl[b] = new Set();
         sl[a].add(lid); sl[b].add(lid);
@@ -361,7 +365,21 @@ function findOptimal(adj, sl, from, to, req = []) {
       if (!r) { ok = false; break; }
       total += r.time;
       arrivalLine = r.path[r.path.length - 1].ln;
-      fp = i === 0 ? r.path : [...fp, ...r.path.slice(1)];
+      if (i === 0) {
+        fp = r.path;
+      } else {
+        // Si le premier nœud du nouveau segment est sur une ligne différente de
+        // arrivalLine, il y a une correspondance à la station charnière que le
+        // path reconstruction n'a pas matérialisée (le nœud de départ du segment
+        // était initialisé directement à coût 240 sans prédécesseur dans dijkstra).
+        // On injecte ce nœud explicitement pour que optimalBreakdown le voie.
+        const segStart = r.path[0];
+        if (segStart.ln !== (fp[fp.length - 1]?.ln ?? segStart.ln)) {
+          fp = [...fp, segStart, ...r.path.slice(1)];
+        } else {
+          fp = [...fp, ...r.path.slice(1)];
+        }
+      }
     }
     // Un demi-tour (rebroussement sur la même ligne, imposé par exemple par un
     // "passer_par" en cul-de-sac) coûte 180 s, à intégrer avant de comparer les

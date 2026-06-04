@@ -60,10 +60,15 @@ export default function Metrodoku() {
     () => puzzle.req.filter(r => r.type === 'pas_changer').map(r => r.st),
     [puzzle]
   );
-  // Graphe contraint (pour le calcul de l'optimal) : retire en plus les
-  // correspondances aux stations "pas_changer".
+  // Stations à éviter complètement (contrainte "pas_passer_par").
+  const bannedSts = useMemo(
+    () => puzzle.req.filter(r => r.type === 'pas_passer_par').map(r => r.st),
+    [puzzle]
+  );
+  // Graphe contraint (pour le calcul de l'optimal) : retire les correspondances
+  // "pas_changer" et retire entièrement les nœuds "pas_passer_par".
   const optGraph = useMemo(
-    () => buildGraph(puzzle.banned, noChangeSts), [puzzle, noChangeSts]
+    () => buildGraph(puzzle.banned, noChangeSts, bannedSts), [puzzle, noChangeSts, bannedSts]
   );
   // Le vrai optimal doit honorer toutes les contraintes : passage pour "passer_par",
   // véritable changement pour "changer", et interdiction de changer pour "pas_changer"
@@ -139,7 +144,25 @@ export default function Metrodoku() {
     // Station d'où l'on est arrivé à `curSt` (sur `curLine`), pour détecter un
     // éventuel demi-tour si l'on repart sur la même ligne dans l'autre sens.
     const prevSt = route.length >= 2 ? route[route.length - 2].st : null;
+
+    // Contrainte "pas_passer_par" : bloquer si le joueur essaie de s'y rendre.
+    const forbiddenDest = puzzle.req.find(r => r.type === 'pas_passer_par' && r.st === st);
+    if (forbiddenDest) {
+      setError(`Vous devez éviter ${st}. Choisissez une autre étape.`);
+      return;
+    }
+
     const seg = computeSegment(curSt, st, curLine, puzzle.banned, prevSt);
+
+    // Contrainte "pas_passer_par" : bloquer si le segment traverse la station interdite.
+    if (seg) {
+      const inter = intermediateStations(curSt, st, seg.chosenLine);
+      const forbiddenInter = puzzle.req.find(r => r.type === 'pas_passer_par' && inter.includes(r.st));
+      if (forbiddenInter) {
+        setError(`Ce trajet passe par ${forbiddenInter.st}, que vous devez éviter.`);
+        return;
+      }
+    }
     let newStep;
     if (!seg) {
       // Saut impossible (aucune ligne directe, ou seule ligne interdite). On NE

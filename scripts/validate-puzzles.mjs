@@ -53,11 +53,12 @@ for (let offset = 0; offset < N; offset++) {
 
   // 3. Solubilité avec toutes les contraintes
   const noChangeSts = puzzle.req.filter(r => r.type === 'pas_changer').map(r => r.st);
-  const finalGraph = buildGraph(puzzle.banned, noChangeSts);
+  const bannedSts   = puzzle.req.filter(r => r.type === 'pas_passer_par').map(r => r.st);
+  const finalGraph = buildGraph(puzzle.banned, noChangeSts, bannedSts);
   const finalOpt = findOptimal(
     finalGraph.adj, finalGraph.sl,
     puzzle.from, puzzle.to,
-    puzzle.req.filter(r => r.type !== 'pas_changer')
+    puzzle.req.filter(r => r.type !== 'pas_changer' && r.type !== 'pas_passer_par')
   );
   if (!finalOpt) {
     errors.push('INSOLUBLE');
@@ -66,7 +67,7 @@ for (let offset = 0; offset < N; offset++) {
   const ok = errors.length === 0;
   if (ok) passed++; else failed++;
 
-  const reqStr = puzzle.req.map(r => `${r.type.replace('passer_par','pp').replace('pas_changer','!ch').replace('changer','ch')}@${r.st}`).join(' + ');
+  const reqStr = puzzle.req.map(r => `${r.type.replace('pas_passer_par','!pp').replace('passer_par','pp').replace('pas_changer','!ch').replace('changer','ch')}@${r.st}`).join(' + ');
   const bannedStr = puzzle.banned.length ? ` [!${puzzle.banned.join(',')}]` : '';
   const baseTime = baseOpt ? fmt(baseOpt.time) : '?';
   const finalTime = finalOpt ? fmt(finalOpt.time) : '?';

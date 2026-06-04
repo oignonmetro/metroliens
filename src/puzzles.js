@@ -42,14 +42,24 @@ function computeReqStatus(routeSteps, req, final = false, banned = []) {
       if (idx === -1) return 'satisfied'; // X n'est pas un nœud intérieur : OK
       return routeSteps[idx + 1].transfer ? 'failed' : 'satisfied';
     }
+    if (r.type === 'pas_passer_par') {
+      // Interdit de traverser X, même en station intermédiaire sur une ligne.
+      if (!final) return 'pending';
+      for (let i = 1; i < routeSteps.length; i++) {
+        if (routeSteps[i].st === r.st) return 'failed';
+        if ((routeSteps[i].intermediates || []).includes(r.st)) return 'failed';
+      }
+      return 'satisfied';
+    }
     return 'pending';
   });
 }
 
 const REQ_LABELS = {
-  passer_par: 'PASSER PAR',
-  changer:    'CHANGER À',
-  pas_changer:'SANS CHANGER À',
+  passer_par:     'PASSER PAR',
+  changer:        'CHANGER À',
+  pas_changer:    'SANS CHANGER À',
+  pas_passer_par: 'ÉVITER',
 };
 
 // Puzzles de secours : utilisés si le générateur échoue après 300 essais.
@@ -114,10 +124,10 @@ function getProfile(dayN) {
   if (dow === 0) return { nbReq: 1, types: ['passer_par'],                              minBase: 600,  allowBanned: false };
   if (dow === 1) return { nbReq: 1, types: ['passer_par','changer'],                   minBase: 600,  allowBanned: false };
   if (dow === 2) return { nbReq: 1, types: ['passer_par','changer','pas_changer'],      minBase: 720,  allowBanned: false };
-  if (dow === 3) return { nbReq: 'rand', types: ['passer_par','changer','pas_changer'], minBase: 720, allowBanned: false };
-  if (dow === 4) return { nbReq: 2, types: ['passer_par','changer','pas_changer'],      minBase: 720,  allowBanned: false };
-  if (dow === 5) return { nbReq: 2, types: ['passer_par','changer','pas_changer'],      minBase: 840,  allowBanned: true  };
-                 return { nbReq: 2, types: ['passer_par','changer','pas_changer'],      minBase: 900,  allowBanned: true  };
+  if (dow === 3) return { nbReq: 'rand', types: ['passer_par','changer','pas_changer','pas_passer_par'], minBase: 720, allowBanned: false };
+  if (dow === 4) return { nbReq: 2,      types: ['passer_par','changer','pas_changer','pas_passer_par'], minBase: 720, allowBanned: false };
+  if (dow === 5) return { nbReq: 2,      types: ['passer_par','changer','pas_changer','pas_passer_par'], minBase: 840, allowBanned: true  };
+                 return { nbReq: 2,      types: ['passer_par','changer','pas_changer','pas_passer_par'], minBase: 900, allowBanned: true  };
 }
 
 function pickRand(arr, rand) { return arr[Math.floor(rand() * arr.length)]; }
@@ -173,18 +183,20 @@ function generatePuzzle(dayN) {
       // Choisir le type parmi ceux disponibles pour ce profil
       // Pour pas_changer : on ne l'autorise que s'il en reste de la place
       const availableTypes = profile.types.filter(t => {
-        if (t === 'pas_changer' && req.some(r => r.type === 'pas_changer')) return false;
-        if (t === 'changer'     && req.some(r => r.type === 'changer'))     return false;
+        if (t === 'pas_changer'    && req.some(r => r.type === 'pas_changer'))    return false;
+        if (t === 'changer'        && req.some(r => r.type === 'changer'))        return false;
+        if (t === 'pas_passer_par' && req.some(r => r.type === 'pas_passer_par')) return false;
         return true;
       });
       if (!availableTypes.length) { valid = false; break; }
       const type = pickRand(availableTypes, rand);
 
       // Calculer l'optimal courant avec les contraintes déjà accumulées
-      const noChangeSts = req.filter(r => r.type === 'pas_changer').map(r => r.st);
-      const curGraph = buildGraph(banned, noChangeSts);
+      const noChangeSts  = req.filter(r => r.type === 'pas_changer').map(r => r.st);
+      const bannedSts    = req.filter(r => r.type === 'pas_passer_par').map(r => r.st);
+      const curGraph = buildGraph(banned, noChangeSts, bannedSts);
       const curOpt = findOptimal(curGraph.adj, curGraph.sl, from, to,
-                                  req.filter(r => r.type !== 'pas_changer'));
+                                  req.filter(r => r.type !== 'pas_changer' && r.type !== 'pas_passer_par'));
       if (!curOpt) { valid = false; break; }
 
       // Trouver une station candidate contraignante
@@ -225,6 +237,18 @@ function generatePuzzle(dayN) {
         );
         if (!notOnPath.length) { valid = false; break; }
         candidateSt = pickRand(notOnPath, rand);
+      } else if (type === 'pas_passer_par') {
+        // Station sur le chemin optimal courant (hors départ/arrivée/déjà utilisées)
+        // Dédupliquée car le même nœud peut apparaître plusieurs fois (demi-tour).
+        const seen = new Set();
+        const onPath = curOpt.path
+          .map(p => p.st)
+          .filter(s => {
+            if (s === from || s === to || usedStations.includes(s) || seen.has(s)) return false;
+            seen.add(s); return true;
+          });
+        if (!onPath.length) { valid = false; break; }
+        candidateSt = pickRand(onPath, rand);
       } else { // changer
         // Station d'interchange sur le chemin courant où l'optimal ne change pas déjà
         const notChanging = interchangesOnPath.filter(s =>
@@ -246,9 +270,10 @@ function generatePuzzle(dayN) {
 
     // 6. Vérification finale : puzzle soluble avec toutes les contraintes combinées
     const noChangeSts = req.filter(r => r.type === 'pas_changer').map(r => r.st);
-    const finalGraph = buildGraph(banned, noChangeSts);
+    const bannedSts   = req.filter(r => r.type === 'pas_passer_par').map(r => r.st);
+    const finalGraph = buildGraph(banned, noChangeSts, bannedSts);
     const finalOpt = findOptimal(finalGraph.adj, finalGraph.sl, from, to,
-                                  req.filter(r => r.type !== 'pas_changer'));
+                                  req.filter(r => r.type !== 'pas_changer' && r.type !== 'pas_passer_par'));
     if (!finalOpt) continue;
 
     return { from, to, banned, req };
@@ -291,6 +316,10 @@ function isConstraintBinding(req, baseOpt) {
     // contraignant si l'optimal libre change justement de ligne à cette station
     // (l'interdire force alors un autre itinéraire) ; sinon la contrainte est vide.
     return pathChangesAt(baseOpt.path, req.st);
+  }
+  if (req.type === 'pas_passer_par') {
+    // contraignant si l'optimal libre passe par cette station
+    return pathPassesThrough(baseOpt.path, req.st);
   }
   return true;
 }
