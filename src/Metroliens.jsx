@@ -792,10 +792,6 @@ export default function Metrodoku() {
               </div>
             )}
 
-            <div style={{textAlign:'center', fontSize:10, color:T.dim, paddingTop:4}}>
-              © 2026, Métroliens. Tous droits réservés.
-            </div>
-
           </div>
         )}
       </div>
