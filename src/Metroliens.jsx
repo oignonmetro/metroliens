@@ -204,14 +204,15 @@ export default function Metrodoku() {
         return;
       }
     }
-    // Vérification à l'arrivée : seule l'omission d'un "changer à X" bloque la
-    // soumission (le joueur devait poser lui-même cette correspondance et ne l'a pas
-    // faite — faute manifeste). Les autres contraintes, y compris "passer par X", ne
-    // bloquent pas : le trajet est accepté puis invalidé à l'écran de fin.
+    // Vérification à l'arrivée : on bloque uniquement si le joueur a complètement
+    // sauté la station "changer à X" (status 'pending' = station absente du trajet).
+    // Si le joueur est bien passé par X mais n'a pas changé de ligne (status 'failed'),
+    // on ne bloque pas : la contrainte échouera silencieusement à l'écran de fin,
+    // comme toutes les autres contraintes négatives.
     if (st === puzzle.to) {
       const finalStatus = computeReqStatus(newRoute, puzzle.req, true, puzzle.banned);
       const blockingIdx = puzzle.req.findIndex(
-        (r, i) => r.type === 'changer' && finalStatus[i] !== 'satisfied'
+        (r, i) => r.type === 'changer' && finalStatus[i] === 'pending'
       );
       // On ne bloque que si l'itinéraire est par ailleurs possible : s'il contient
       // déjà un saut impossible, on laisse aller au bilan final.
