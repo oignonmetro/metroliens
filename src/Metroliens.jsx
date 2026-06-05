@@ -153,24 +153,12 @@ export default function Metrodoku() {
     // éventuel demi-tour si l'on repart sur la même ligne dans l'autre sens.
     const prevSt = route.length >= 2 ? route[route.length - 2].st : null;
 
-    // Contrainte "pas_passer_par" : bloquer si le joueur essaie de s'y rendre.
-    const forbiddenDest = puzzle.req.find(r => r.type === 'pas_passer_par' && r.st === st);
-    if (forbiddenDest) {
-      setError(`Vous devez éviter ${st}. Choisissez une autre étape.`);
-      return;
-    }
-
+    // Contrainte "pas_passer_par" (éviter) : on NE bloque PAS le joueur. Passer par
+    // une station à éviter n'est pas une faute manifeste (souvent une traversée
+    // intermédiaire involontaire) — c'est au joueur de surveiller son trajet. La
+    // violation est jugée silencieusement à l'écran de fin (computeReqStatus).
     const seg = computeSegment(curSt, st, curLine, puzzle.banned, prevSt);
 
-    // Contrainte "pas_passer_par" : bloquer si le segment traverse la station interdite.
-    if (seg) {
-      const inter = intermediateStations(curSt, st, seg.chosenLine);
-      const forbiddenInter = puzzle.req.find(r => r.type === 'pas_passer_par' && inter.includes(r.st));
-      if (forbiddenInter) {
-        setError(`Ce trajet passe par ${forbiddenInter.st}, que vous devez éviter.`);
-        return;
-      }
-    }
     let newStep;
     if (!seg) {
       // Saut impossible (aucune ligne directe, ou seule ligne interdite). On NE
