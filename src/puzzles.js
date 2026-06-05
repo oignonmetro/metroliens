@@ -285,8 +285,12 @@ function generatePuzzle(dayN) {
 
       const r = type === 'pas_utiliser_ligne' ? { ln: candidateLn, type } : { st: candidateSt, type };
 
-      // Vérifier que la contrainte est bien contraignante vs baseOpt
-      if (!isConstraintBinding(r, baseOpt)) { valid = false; break; }
+      // Vérifier que la contrainte est bien contraignante vs baseOpt ET vs curOpt.
+      // Le test vs baseOpt garantit qu'elle a un sens absolu (non déjà satisfaite
+      // sur le trajet libre). Le test vs curOpt garantit qu'elle ajoute une vraie
+      // difficulté dans le contexte des contraintes déjà choisies — sans quoi deux
+      // contraintes pourraient s'annuler mutuellement (l'une satisfait l'autre).
+      if (!isConstraintBinding(r, baseOpt) || !isConstraintBinding(r, curOpt)) { valid = false; break; }
 
       req.push(r);
     }
