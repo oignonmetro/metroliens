@@ -464,11 +464,6 @@ export default function Metrodoku() {
             )}
           </div>
         </div>
-        {phase==='playing' && totalTime>0 && (
-          <span style={{fontSize:13, color:T.muted, fontVariantNumeric:'tabular-nums'}}>
-            {fmt(totalTime)}
-          </span>
-        )}
       </div>
 
       {/* CARTE PUZZLE */}
