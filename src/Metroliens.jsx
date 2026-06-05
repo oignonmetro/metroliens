@@ -352,7 +352,7 @@ export default function Metrodoku() {
     const forced = new Set(
       puzzle.req.filter(r => r.type === 'passer_par' || r.type === 'changer').map(r => r.st)
     );
-    const segs = [];
+    const raw = [];
     let i = 0;
     while (i < path.length - 1) {
       const ln = path[i + 1].ln;
@@ -367,9 +367,12 @@ export default function Metrodoku() {
         j++;
       }
       const transferAtStart = (i + 1 < path.length && path[i].st === path[i + 1].st) ? 1 : 0;
-      segs.push({ from: path[i].st, to: path[j].st, ln, stops: j - i - transferAtStart });
+      raw.push({ from: path[i].st, to: path[j].st, ln, stops: j - i - transferAtStart });
       i = j; // progression stricte
     }
+    // Retirer les segments "transfert pur" (from===to, stops=0) : artefacts du
+    // graphe de correspondance. Le changement de ligne est capté par le segment suivant.
+    const segs = raw.filter(s => !(s.from === s.to && s.stops <= 0));
     // Marque les correspondances : il n'y a changement de ligne que si le segment
     // courant emprunte une ligne DIFFÉRENTE du précédent. Une coupure à un arrêt
     // "passer_par" traversé sur la même ligne n'est PAS une correspondance (la
