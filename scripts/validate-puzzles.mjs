@@ -47,18 +47,19 @@ for (let offset = 0; offset < N; offset++) {
   // 2. Contraintes individuellement contraignantes
   for (const r of puzzle.req) {
     if (!isConstraintBinding(r, baseOpt)) {
-      errors.push(`NON-CONTRAIGNANT(${r.type}@${r.st})`);
+      errors.push(`NON-CONTRAIGNANT(${r.type}@${r.st ?? r.ln})`);
     }
   }
 
   // 3. Solubilité avec toutes les contraintes
   const noChangeSts = puzzle.req.filter(r => r.type === 'pas_changer').map(r => r.st);
   const bannedSts   = puzzle.req.filter(r => r.type === 'pas_passer_par').map(r => r.st);
-  const finalGraph = buildGraph(puzzle.banned, noChangeSts, bannedSts);
+  const bannedLns   = puzzle.req.filter(r => r.type === 'pas_utiliser_ligne').map(r => r.ln);
+  const finalGraph = buildGraph([...puzzle.banned, ...bannedLns], noChangeSts, bannedSts);
   const finalOpt = findOptimal(
     finalGraph.adj, finalGraph.sl,
     puzzle.from, puzzle.to,
-    puzzle.req.filter(r => r.type !== 'pas_changer' && r.type !== 'pas_passer_par')
+    puzzle.req.filter(r => r.type === 'passer_par' || r.type === 'changer')
   );
   if (!finalOpt) {
     errors.push('INSOLUBLE');
@@ -67,7 +68,7 @@ for (let offset = 0; offset < N; offset++) {
   const ok = errors.length === 0;
   if (ok) passed++; else failed++;
 
-  const reqStr = puzzle.req.map(r => `${r.type.replace('pas_passer_par','!pp').replace('passer_par','pp').replace('pas_changer','!ch').replace('changer','ch')}@${r.st}`).join(' + ');
+  const reqStr = puzzle.req.map(r => `${r.type.replace('pas_utiliser_ligne','!ln').replace('pas_passer_par','!pp').replace('passer_par','pp').replace('pas_changer','!ch').replace('changer','ch')}@${r.st ?? r.ln}`).join(' + ');
   const bannedStr = puzzle.banned.length ? ` [!${puzzle.banned.join(',')}]` : '';
   const baseTime = baseOpt ? fmt(baseOpt.time) : '?';
   const finalTime = finalOpt ? fmt(finalOpt.time) : '?';

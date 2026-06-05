@@ -65,10 +65,18 @@ export default function Metrodoku() {
     () => puzzle.req.filter(r => r.type === 'pas_passer_par').map(r => r.st),
     [puzzle]
   );
+  // Lignes interdites par contrainte "pas_utiliser_ligne" : bannies du graphe de
+  // l'optimal (au même titre que puzzle.banned), mais PAS du graphe de jeu — le
+  // joueur peut quand même les emprunter et invalider son trajet à la fin.
+  const bannedLns = useMemo(
+    () => puzzle.req.filter(r => r.type === 'pas_utiliser_ligne').map(r => r.ln),
+    [puzzle]
+  );
   // Graphe contraint (pour le calcul de l'optimal) : retire les correspondances
-  // "pas_changer" et retire entièrement les nœuds "pas_passer_par".
+  // "pas_changer", les nœuds "pas_passer_par" et les lignes "pas_utiliser_ligne".
   const optGraph = useMemo(
-    () => buildGraph(puzzle.banned, noChangeSts, bannedSts), [puzzle, noChangeSts, bannedSts]
+    () => buildGraph([...puzzle.banned, ...bannedLns], noChangeSts, bannedSts),
+    [puzzle, noChangeSts, bannedSts, bannedLns]
   );
   // Le vrai optimal doit honorer toutes les contraintes : passage pour "passer_par",
   // véritable changement pour "changer", et interdiction de changer pour "pas_changer"
@@ -303,7 +311,13 @@ export default function Metrodoku() {
   // contraintes non respectées. Sert à composer le message de l'écran de fin.
   const invalidReasons = [
     ...impossibleSteps.map(s => s.reason),
-    ...failedReqs.map(r => `il ne passe pas par ${r.st}`),
+    ...failedReqs.map(r =>
+      r.type === 'pas_passer_par'     ? `il passe par ${r.st}`
+      : r.type === 'pas_changer'      ? `il change à ${r.st}`
+      : r.type === 'changer'          ? `il ne change pas à ${r.st}`
+      : r.type === 'pas_utiliser_ligne' ? `il emprunte la ligne ${r.ln}`
+      :                                 `il ne passe pas par ${r.st}`
+    ),
   ];
 
   // Couleur du bloc score, par ordre de priorité :
@@ -336,9 +350,9 @@ export default function Metrodoku() {
   // L'index avance strictement (i = j) pour éviter toute boucle infinie.
   function optimalSegments(path) {
     const forced = new Set(
-      puzzle.req.filter(r => r.type !== 'pas_changer').map(r => r.st)
+      puzzle.req.filter(r => r.type === 'passer_par' || r.type === 'changer').map(r => r.st)
     );
-    const segs = [];
+    const raw = [];
     let i = 0;
     while (i < path.length - 1) {
       const ln = path[i + 1].ln;
@@ -353,9 +367,12 @@ export default function Metrodoku() {
         j++;
       }
       const transferAtStart = (i + 1 < path.length && path[i].st === path[i + 1].st) ? 1 : 0;
-      segs.push({ from: path[i].st, to: path[j].st, ln, stops: j - i - transferAtStart });
+      raw.push({ from: path[i].st, to: path[j].st, ln, stops: j - i - transferAtStart });
       i = j; // progression stricte
     }
+    // Retirer les segments "transfert pur" (from===to, stops=0) : artefacts du
+    // graphe de correspondance. Le changement de ligne est capté par le segment suivant.
+    const segs = raw.filter(s => !(s.from === s.to && s.stops <= 0));
     // Marque les correspondances : il n'y a changement de ligne que si le segment
     // courant emprunte une ligne DIFFÉRENTE du précédent. Une coupure à un arrêt
     // "passer_par" traversé sur la même ligne n'est PAS une correspondance (la
@@ -501,8 +518,9 @@ export default function Metrodoku() {
                     </span>
                     <span style={{fontSize:12, fontWeight:600, padding:'3px 10px',
                       background:bg, color:col, borderRadius:20, border:`1px solid ${bd}`,
+                      display:'inline-flex', alignItems:'center', gap:4,
                       textDecoration:status==='satisfied'?'line-through':'none'}}>
-                      {r.st}
+                      {r.type==='pas_utiliser_ligne' ? <LineBadge lid={r.ln} size={18}/> : r.st}
                     </span>
                   </div>
                 );
