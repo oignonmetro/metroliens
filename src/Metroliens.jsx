@@ -203,9 +203,19 @@ export default function Metrodoku() {
     // Fautes manifestes : vérifiées uniquement au moment où le joueur saisit la
     // station d'arrivée. Une faute est manifeste si elle découle du seul fait
     // d'avoir ÉCRIT (ou pas) une station dans l'itinéraire explicite :
-    //   • pas_changer@X  : joueur a écrit X  → il ne peut pas y changer
-    //   • pas_passer_par@X : joueur a écrit X → il ne doit pas y passer
-    //   • changer@X      : joueur n'a pas écrit X → il doit y changer
+    //
+    //   contrainte          faute manifeste            message
+    //   ------------------  -------------------------  -------------------------------
+    //   pas_changer@X       joueur a écrit X           "Vous ne pouvez pas changer à X"
+    //   pas_passer_par@X    joueur a écrit X           "Vous ne devez pas passer par X"
+    //   changer@X           joueur n'a pas écrit X     "Vous devez changer à X"
+    //   passer_par@X        a écrit X / n'a pas écrit  (non manifeste : bilan silencieux)
+    //   pas_utiliser_ligne  (non applicable)           (non manifeste : bilan silencieux)
+    //
+    // passer_par n'est pas manifeste : avoir écrit X ne garantit pas qu'on y soit
+    // « passé » au sens des règles (et ne pas l'avoir écrit n'exclut pas un passage
+    // implicite). pas_utiliser_ligne ne porte pas sur les stations écrites. Ces deux
+    // contraintes ne sont donc jugées qu'à l'écran de bilan.
     // Si une faute manifeste est détectée, on bloque et on invite à réviser
     // (aucune mise à jour d'état) ; les autres violations sont jugées en bilan.
     if (st === puzzle.to) {
