@@ -200,10 +200,31 @@ export default function Metrodoku() {
       }
       return;
     }
-    // Aucun avertissement n'est donné pendant le jeu : toute violation de contrainte
-    // (pas_changer, changer omis, pas_passer_par, ligne interdite, saut impossible…)
-    // est laissée possible et n'est révélée qu'à l'écran de bilan, après que le joueur
-    // a validé son trajet en sélectionnant la station d'arrivée.
+    // Fautes manifestes : vérifiées uniquement au moment où le joueur saisit la
+    // station d'arrivée. Une faute est manifeste si elle découle du seul fait
+    // d'avoir ÉCRIT (ou pas) une station dans l'itinéraire explicite :
+    //   • pas_changer@X  : joueur a écrit X  → il ne peut pas y changer
+    //   • pas_passer_par@X : joueur a écrit X → il ne doit pas y passer
+    //   • changer@X      : joueur n'a pas écrit X → il doit y changer
+    // Si une faute manifeste est détectée, on bloque et on invite à réviser
+    // (aucune mise à jour d'état) ; les autres violations sont jugées en bilan.
+    if (st === puzzle.to) {
+      const written = new Set(newRoute.map(s => s.st));
+      for (const r of puzzle.req) {
+        if (r.type === 'pas_changer' && written.has(r.st)) {
+          setError(`Vous ne pouvez pas changer à ${r.st}. Révisez votre itinéraire.`);
+          return;
+        }
+        if (r.type === 'pas_passer_par' && written.has(r.st)) {
+          setError(`Vous ne devez pas passer par ${r.st}. Révisez votre itinéraire.`);
+          return;
+        }
+        if (r.type === 'changer' && !written.has(r.st)) {
+          setError(`Vous devez changer à ${r.st}. Révisez votre itinéraire.`);
+          return;
+        }
+      }
+    }
     setRoute(newRoute);
     setTotalTime(newTime);
     setCurSt(st); setCurLine(seg ? seg.chosenLine : null);
