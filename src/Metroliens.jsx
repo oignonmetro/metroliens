@@ -188,7 +188,7 @@ export default function Metrodoku() {
       setVisited(newVisited);
       const isFinal = (st === puzzle.to);
       setReqStatus(computeReqStatus(newRoute, puzzle.req, isFinal, puzzle.banned));
-      setError(`Segment impossible : ${newStep.reason}.`);
+      // Pas d'avertissement : l'erreur est révélée silencieusement à l'écran de fin.
       if (isFinal) {
         const updated = recordResult({
           dayK: dayKey(), dayN: dayNumber(), puzzleNo: puzzle.puzzleNo,
