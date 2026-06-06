@@ -200,35 +200,10 @@ export default function Metrodoku() {
       }
       return;
     }
-    // Contrainte "pas_changer" : on bloque dès que le joueur tente de repartir
-    // d'une station interdite sur une autre ligne (donc d'y faire sa correspondance).
-    // Ne s'applique que sur un segment réellement emprunté (pas un saut impossible).
-    if (seg && seg.transfer && route.length >= 2) {
-      const forbidden = puzzle.req.find(r => r.type === 'pas_changer' && r.st === curSt);
-      if (forbidden) {
-        setError(`Vous ne pouvez pas changer à ${curSt}. Révisez votre itinéraire.`);
-        return;
-      }
-    }
-    // Vérification à l'arrivée : on bloque uniquement si le joueur a complètement
-    // sauté la station "changer à X" (status 'pending' = station absente du trajet).
-    // Si le joueur est bien passé par X mais n'a pas changé de ligne (status 'failed'),
-    // on ne bloque pas : la contrainte échouera silencieusement à l'écran de fin,
-    // comme toutes les autres contraintes négatives.
-    if (st === puzzle.to) {
-      const finalStatus = computeReqStatus(newRoute, puzzle.req, true, puzzle.banned);
-      const blockingIdx = puzzle.req.findIndex(
-        (r, i) => r.type === 'changer' && finalStatus[i] === 'pending'
-      );
-      // On ne bloque que si l'itinéraire est par ailleurs possible : s'il contient
-      // déjà un saut impossible, on laisse aller au bilan final.
-      const hasImpossible = newRoute.some(s => s.impossible);
-      if (blockingIdx !== -1 && !hasImpossible) {
-        const r = puzzle.req[blockingIdx];
-        setError(`Vous devez ${REQ_LABELS[r.type].toLowerCase()} ${r.st}. Révisez votre itinéraire.`);
-        return;
-      }
-    }
+    // Aucun avertissement n'est donné pendant le jeu : toute violation de contrainte
+    // (pas_changer, changer omis, pas_passer_par, ligne interdite, saut impossible…)
+    // est laissée possible et n'est révélée qu'à l'écran de bilan, après que le joueur
+    // a validé son trajet en sélectionnant la station d'arrivée.
     setRoute(newRoute);
     setTotalTime(newTime);
     setCurSt(st); setCurLine(seg ? seg.chosenLine : null);
