@@ -157,7 +157,7 @@ export default function Metrodoku() {
     // une station à éviter n'est pas une faute manifeste (souvent une traversée
     // intermédiaire involontaire) — c'est au joueur de surveiller son trajet. La
     // violation est jugée silencieusement à l'écran de fin (computeReqStatus).
-    const seg = computeSegment(curSt, st, curLine, puzzle.banned, prevSt);
+    const seg = computeSegment(curSt, st, curLine, puzzle.banned, prevSt, bannedLns);
 
     let newStep;
     if (!seg) {

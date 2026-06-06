@@ -230,9 +230,20 @@ function isUTurn(prevSt, curSt, nextSt, lid) {
   return firstStepOnLine(curSt, prevSt, lid) === firstStepOnLine(curSt, nextSt, lid);
 }
 
-function computeSegment(from, to, fromLine, bannedLines, prevSt = null) {
-  const allLines = directLines(from, to, bannedLines);
+function computeSegment(from, to, fromLine, bannedLines, prevSt = null, avoidLines = []) {
+  let allLines = directLines(from, to, bannedLines);
   if (!allLines.length) return null;
+  // Lignes interdites par contrainte "pas_utiliser_ligne" : dès lors qu'au moins
+  // une AUTRE ligne dessert le segment, on fait « comme si » la ligne interdite
+  // n'existait pas ici — elle disparaît du choix et de l'affichage, et le décompte
+  // de stations s'adapte à la ligne retenue (p.ex. Arts et Métiers → République :
+  // la 11 est directe, mais si elle est interdite on prend la 3, qui passe par
+  // Temple, soit 2 stations). Si la ligne interdite est la SEULE possible, on la
+  // conserve : le joueur pourra l'emprunter et invalidera son trajet au bilan.
+  if (avoidLines.length) {
+    const remaining = allLines.filter(l => !avoidLines.includes(l));
+    if (remaining.length) allLines = remaining;
+  }
   let chosenLine = null, stops = Infinity, transfer = false;
   if (fromLine && allLines.includes(fromLine)) {
     chosenLine = fromLine;
