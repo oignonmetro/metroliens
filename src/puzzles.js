@@ -196,11 +196,18 @@ function generatePuzzle(dayN) {
 
       // Choisir le type parmi ceux disponibles pour ce profil
       // Pour pas_changer : on ne l'autorise que s'il en reste de la place
+      const isLastReq = (ri === nbReq - 1);
       const availableTypes = profile.types.filter(t => {
         if (t === 'pas_changer'        && req.some(r => r.type === 'pas_changer'))        return false;
         if (t === 'changer'            && req.some(r => r.type === 'changer'))            return false;
         if (t === 'pas_passer_par'     && req.some(r => r.type === 'pas_passer_par'))     return false;
         if (t === 'pas_utiliser_ligne' && req.some(r => r.type === 'pas_utiliser_ligne')) return false;
+        // Contraintes de ligne tirées en dernier : la ligne est alors choisie d'après
+        // l'optimal DÉJÀ dévié par les contraintes de station (passer_par/changer),
+        // donc réellement mordante au lieu d'être prise sur le trajet libre — où une
+        // ligne empruntée sur le plus court chemin devient souvent redondante une fois
+        // le détour imposé. Avec nbReq=1, isLastReq est toujours vrai (inchangé).
+        if (t === 'pas_utiliser_ligne' && !isLastReq) return false;
         return true;
       });
       if (!availableTypes.length) { valid = false; break; }
@@ -305,6 +312,38 @@ function generatePuzzle(dayN) {
     const finalOpt = findOptimal(finalGraph.adj, finalGraph.sl, from, to,
                                   req.filter(r => r.type === 'passer_par' || r.type === 'changer'));
     if (!finalOpt) continue;
+
+    // 7. Revalidation croisée (« leave-one-out ») : chaque contrainte doit rester
+    //    contraignante face à TOUTES les autres, pas seulement face aux précédentes.
+    //    Une contrainte tirée tôt peut devenir redondante une fois les suivantes
+    //    ajoutées (ex. bannir une ligne que le détour imposé par un passer_par
+    //    n'emprunte de toute façon pas). On recompute l'optimal en retirant la
+    //    contrainte testée et on vérifie qu'elle reste binding.
+    let allBinding = true;
+    for (let k = 0; k < req.length && allBinding; k++) {
+      const others = req.filter((_, j) => j !== k);
+      const ncs  = others.filter(r => r.type === 'pas_changer').map(r => r.st);
+      const bsts = others.filter(r => r.type === 'pas_passer_par').map(r => r.st);
+      const blns = others.filter(r => r.type === 'pas_utiliser_ligne').map(r => r.ln);
+      const g = buildGraph([...banned, ...blns], ncs, bsts);
+      const optWithout = findOptimal(g.adj, g.sl, from, to,
+        others.filter(r => r.type === 'passer_par' || r.type === 'changer'));
+      if (!optWithout || !isConstraintBinding(req[k], optWithout)) allBinding = false;
+    }
+    if (!allBinding) continue;
+
+    // La ligne bannie « du jour » (banned) doit elle aussi rester contraignante face
+    // aux req : l'optimal honorant toutes les req SANS le bannissement doit emprunter
+    // la ligne bannie (sinon l'interdire ne change rien).
+    if (banned.length > 0) {
+      const ncs  = req.filter(r => r.type === 'pas_changer').map(r => r.st);
+      const bsts = req.filter(r => r.type === 'pas_passer_par').map(r => r.st);
+      const blns = req.filter(r => r.type === 'pas_utiliser_ligne').map(r => r.ln);
+      const g = buildGraph([...blns], ncs, bsts); // sans le banned du jour
+      const optNoBan = findOptimal(g.adj, g.sl, from, to,
+        req.filter(r => r.type === 'passer_par' || r.type === 'changer'));
+      if (!optNoBan || !pathUsesLines(optNoBan.path, banned)) continue;
+    }
 
     return { from, to, banned, req };
   }

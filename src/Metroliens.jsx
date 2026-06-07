@@ -51,10 +51,6 @@ export default function Metrodoku() {
   }, []);
 
   const puzzle   = useMemo(getDailyPuzzle, []);
-  // Graphe principal (pour le jeu : autocomplete, segments du joueur). Il ne retire
-  // que les lignes interdites ; les correspondances "pas_changer" restent présentes,
-  // pour que le joueur puisse tenter le changement et être bloqué.
-  const {adj,sl} = useMemo(() => buildGraph(puzzle.banned), [puzzle]);
   // Stations où la correspondance est interdite (contrainte "pas_changer").
   const noChangeSts = useMemo(
     () => puzzle.req.filter(r => r.type === 'pas_changer').map(r => r.st),
@@ -85,12 +81,22 @@ export default function Metrodoku() {
     () => findOptimal(optGraph.adj, optGraph.sl, puzzle.from, puzzle.to, puzzle.req),
     [optGraph, puzzle]
   );
-  // Optimal SANS les contraintes (lignes interdites uniquement) : sert de référence
-  // pour vérifier que chaque contrainte impose réellement un détour.
-  const baseOptimal = useMemo(() => findOptimal(adj, sl, puzzle.from, puzzle.to, []), [adj,sl,puzzle]);
+  // Contraintes « non contraignantes » : test leave-one-out — une contrainte est
+  // vide si l'optimal honorant TOUTES LES AUTRES la satisfait déjà (elle n'impose
+  // aucun détour dans le contexte réel du puzzle). Plus juste qu'un test contre
+  // l'optimal libre, qui raterait les redondances mutuelles entre contraintes.
   const vacuousReqs = useMemo(
-    () => puzzle.req.filter(r => !isConstraintBinding(r, baseOptimal)),
-    [puzzle, baseOptimal]
+    () => puzzle.req.filter((r, k) => {
+      const others = puzzle.req.filter((_, j) => j !== k);
+      const ncs  = others.filter(x => x.type === 'pas_changer').map(x => x.st);
+      const bsts = others.filter(x => x.type === 'pas_passer_par').map(x => x.st);
+      const blns = others.filter(x => x.type === 'pas_utiliser_ligne').map(x => x.ln);
+      const g = buildGraph([...puzzle.banned, ...blns], ncs, bsts);
+      const optWithout = findOptimal(g.adj, g.sl, puzzle.from, puzzle.to,
+        others.filter(x => x.type === 'passer_par' || x.type === 'changer'));
+      return optWithout && !isConstraintBinding(r, optWithout);
+    }),
+    [puzzle]
   );
 
   const allStations = useMemo(() => {
