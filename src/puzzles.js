@@ -144,6 +144,44 @@ function getProfile(dayN) {
                  return { nbReq: 2,      types: ['passer_par','changer','pas_changer','pas_passer_par','pas_utiliser_ligne'], minBase: 900, allowBanned: true  };
 }
 
+// ── Score de difficulté ──────────────────────────────────────────────────
+// Combine plusieurs facteurs ressentis par le joueur :
+//   - le temps total du trajet contraint (effort brut)
+//   - le détour qu'imposent les contraintes par rapport au trajet libre
+//     (à quel point on est forcé de s'écarter du plus court chemin)
+//   - le nombre de correspondances sur le trajet contraint (charge mentale)
+//   - la complexité des types de contraintes elles-mêmes (lire/retenir/vérifier
+//     "sans changer à X" est plus exigeant que "passer par X", etc.)
+// Le score sert à viser une difficulté CROISSANTE au fil de la semaine plutôt
+// que de s'arrêter sur le premier puzzle valide rencontré (qui peut être trivial,
+// p.ex. une contrainte qui ne coûte qu'1min30 de détour un jeudi).
+const TYPE_WEIGHT = {
+  passer_par: 1, changer: 1.2, pas_changer: 1.6, pas_passer_par: 1.5, pas_utiliser_ligne: 1.8,
+};
+function countTransfers(path) {
+  let t = 0;
+  for (let i = 1; i < path.length; i++) if (path[i].st === path[i-1].st) t++;
+  return t;
+}
+function difficultyScore(req, banned, freeOpt, finalOpt) {
+  const totalMin  = finalOpt.time / 60;
+  const detourMin = (finalOpt.time - freeOpt.time) / 60;
+  const transfers = countTransfers(finalOpt.path);
+  const typeWeight = req.reduce((a, r) => a + (TYPE_WEIGHT[r.type] || 1), 0) + (banned.length ? 1.8 : 0);
+  return totalMin * 0.5 + detourMin * 1.2 + transfers * 1.5 + typeWeight * 3;
+}
+// Bandes-cibles de score par jour (0=lundi … 6=dimanche), légèrement chevauchantes
+// pour rester atteignables tout en imposant une tendance nettement croissante.
+const DIFFICULTY_BANDS = [
+  [14, 22], // lundi    — prise en main
+  [21, 28], // mardi
+  [27, 34], // mercredi
+  [33, 40], // jeudi
+  [41, 50], // vendredi
+  [49, 60], // samedi
+  [59, 82], // dimanche — le plus corsé
+];
+
 function pickRand(arr, rand) { return arr[Math.floor(rand() * arr.length)]; }
 
 // Retourne true si le chemin optimal emprunte une des lignes indiquées.
@@ -157,8 +195,15 @@ function generatePuzzle(dayN) {
   const profile = getProfile(dayN);
   // Jeudi : le rand est appelé une fois pour le nbReq, il faut le faire avec rand()
   const nbReq = (profile.nbReq === 'rand') ? (rand() < 0.5 ? 1 : 2) : profile.nbReq;
+  const dow = ((dayN + 2) % 7 + 7) % 7;
+  const [bandLo, bandHi] = DIFFICULTY_BANDS[dow];
 
   const MAX_TRIES = 300;
+  // On ne s'arrête pas au premier puzzle valide : on vise une difficulté précise
+  // pour ce jour de la semaine (DIFFICULTY_BANDS). Tant qu'aucun candidat ne tombe
+  // dans la bande-cible, on retient le plus proche ("best") et on continue à
+  // chercher ; au bout du budget de tentatives, on retourne le meilleur trouvé.
+  let best = null, bestDist = Infinity;
 
   for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
     // 1. Tirer la paire (from, to)
@@ -345,8 +390,20 @@ function generatePuzzle(dayN) {
       if (!optNoBan || !pathUsesLines(optNoBan.path, banned)) continue;
     }
 
-    return { from, to, banned, req };
+    // 8. Le candidat est valide : on évalue sa difficulté pour ce jour de la
+    //    semaine. S'il tombe dans la bande-cible, on le retient immédiatement ;
+    //    sinon on le garde comme "meilleur jusqu'ici" (le plus proche de la bande)
+    //    et on poursuit la recherche pour tenter de mieux viser.
+    const score = difficultyScore(req, banned, baseOpt, finalOpt);
+    const dist = score < bandLo ? bandLo - score : score > bandHi ? score - bandHi : 0;
+    const candidate = { from, to, banned, req };
+    if (dist === 0) return candidate;
+    if (dist < bestDist) { bestDist = dist; best = candidate; }
   }
+
+  // Aucun candidat n'est tombé pile dans la bande-cible : on retient le plus
+  // proche trouvé pendant la recherche plutôt que le premier valide rencontré.
+  if (best) return best;
 
   // Filet de sécurité
   return FALLBACK_PUZZLES[((dayN % FALLBACK_PUZZLES.length) + FALLBACK_PUZZLES.length) % FALLBACK_PUZZLES.length];
