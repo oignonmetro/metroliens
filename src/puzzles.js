@@ -173,13 +173,13 @@ function difficultyScore(req, banned, freeOpt, finalOpt) {
 // Bandes-cibles de score par jour (0=lundi … 6=dimanche), légèrement chevauchantes
 // pour rester atteignables tout en imposant une tendance nettement croissante.
 const DIFFICULTY_BANDS = [
-  [14, 22], // lundi    — prise en main
-  [21, 28], // mardi
-  [27, 34], // mercredi
-  [33, 40], // jeudi
-  [41, 50], // vendredi
-  [49, 60], // samedi
-  [59, 82], // dimanche — le plus corsé
+  [14, 21], // lundi    — prise en main
+  [22, 28], // mardi
+  [29, 35], // mercredi
+  [36, 42], // jeudi
+  [43, 50], // vendredi
+  [51, 60], // samedi
+  [61, 84], // dimanche — le plus corsé
 ];
 
 function pickRand(arr, rand) { return arr[Math.floor(rand() * arr.length)]; }
@@ -198,7 +198,11 @@ function generatePuzzle(dayN) {
   const dow = ((dayN + 2) % 7 + 7) % 7;
   const [bandLo, bandHi] = DIFFICULTY_BANDS[dow];
 
-  const MAX_TRIES = 300;
+  // Budget de recherche généreux : beaucoup de tentatives échouent à la validité
+  // (insoluble, contrainte redondante…), surtout les jours difficiles. Un budget
+  // large garantit assez de candidats RÉELLEMENT notés pour tomber dans la bande
+  // de difficulté visée. La génération n'a lieu qu'une fois par jour (mémoïsée).
+  const MAX_TRIES = 1200;
   // On ne s'arrête pas au premier puzzle valide : on vise une difficulté précise
   // pour ce jour de la semaine (DIFFICULTY_BANDS). Tant qu'aucun candidat ne tombe
   // dans la bande-cible, on retient le plus proche ("best") et on continue à
