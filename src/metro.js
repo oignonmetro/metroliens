@@ -66,8 +66,13 @@ const SEG = {
     ['Maison Blanche',"Porte d'Italie",'Porte de Choisy',"Porte d'Ivry",
      'Pierre et Marie Curie',"Mairie d'Ivry"]],
 
-  '7b': [['Louis Blanc','Jaurès','Bolivar','Buttes-Chaumont','Botzaris',
-    'Place des Fêtes','Pré-Saint-Gervais','Danube']],
+  // Boucle nord à sens unique (vérifiée) : Botzaris -> Place des Fêtes ->
+  // Pré-Saint-Gervais -> Danube -> Botzaris (cf. ONE_WAY_EDGES['7b']).
+  '7b': [
+    ['Louis Blanc','Jaurès','Bolivar','Buttes-Chaumont','Botzaris'],
+    ['Botzaris','Place des Fêtes','Pré-Saint-Gervais'],
+    ['Pré-Saint-Gervais','Danube','Botzaris'],
+  ],
 
   '8': [['Balard','Lourmel','Boucicaut','Félix Faure','Commerce',
     'La Motte-Picquet-Grenelle','École Militaire','La Tour-Maubourg','Invalides',
@@ -90,12 +95,21 @@ const SEG = {
     'Buzenval','Maraîchers','Porte de Montreuil','Robespierre','Croix de Chavaux',
     'Mairie de Montreuil']],
 
-  '10': [['Boulogne-Pont de Saint-Cloud','Boulogne-Jean Jaurès','Michel-Ange-Molitor',
-    'Chardon-Lagache','Mirabeau','Javel-André Citroën','Charles Michels',
-    'Avenue Émile Zola','La Motte-Picquet-Grenelle','Ségur','Duroc','Vaneau',
-    'Sèvres-Babylone','Mabillon','Odéon','Cluny-La Sorbonne','Maubert-Mutualité',
-    'Cardinal Lemoine','Jussieu',"Gare d'Austerlitz","Église d'Auteuil",
-    'Michel-Ange-Auteuil',"Porte d'Auteuil"]],
+  // Boucle d'Auteuil à sens unique (vérifiée) : le tronc commun mène à
+  // Gare d'Austerlitz dans les deux sens, mais la boucle ouest ne se parcourt
+  // que dans le sens Javel-André Citroën -> Église d'Auteuil -> ... ->
+  // Michel-Ange-Molitor (cf. ONE_WAY_EDGES['10']). Avant correction, ce fichier
+  // plaçait à tort "Gare d'Austerlitz" juste à côté de "Église d'Auteuil" alors
+  // qu'elles sont aux deux extrémités opposées de la ligne (faux raccourci).
+  '10': [
+    ['Boulogne-Pont de Saint-Cloud','Boulogne-Jean Jaurès','Michel-Ange-Molitor',
+     'Chardon-Lagache','Mirabeau','Javel-André Citroën','Charles Michels',
+     'Avenue Émile Zola','La Motte-Picquet-Grenelle','Ségur','Duroc','Vaneau',
+     'Sèvres-Babylone','Mabillon','Odéon','Cluny-La Sorbonne','Maubert-Mutualité',
+     'Cardinal Lemoine','Jussieu',"Gare d'Austerlitz"],
+    ['Javel-André Citroën',"Église d'Auteuil",'Michel-Ange-Auteuil',
+     "Porte d'Auteuil",'Michel-Ange-Molitor'],
+  ],
 
   '11': [['Châtelet','Hôtel de Ville','Rambuteau','Arts et Métiers','République',
     'Goncourt','Belleville','Pyrénées','Jourdain','Place des Fêtes','Télégraphe',
@@ -129,24 +143,69 @@ const SEG = {
     "L'Haÿ-les-Roses",'Chevilly-Larue','Thiais-Orly',"Aéroport d'Orly"]],
 };
 
+// Sections à sens unique du réseau réel (boucles terminus) : pour chaque paire de
+// stations physiquement adjacentes listée ici, seul le sens [from -> to] existe en
+// exploitation commerciale (le trajet retour emprunte un autre tronçon de la boucle).
+// Boucle d'Auteuil (L10) : Javel-André Citroën -> Église d'Auteuil -> Michel-Ange-
+// Auteuil -> Porte d'Auteuil -> Michel-Ange-Molitor, et Chardon-Lagache -> Mirabeau
+// -> Javel-André Citroën (Mirabeau n'est desservie que vers Austerlitz, Église
+// d'Auteuil que vers Boulogne). Boucle nord (L7bis) : Botzaris -> Place des Fêtes
+// -> Pré-Saint-Gervais -> Danube -> Botzaris (Place des Fêtes uniquement vers
+// Pré-Saint-Gervais, Danube uniquement vers Louis Blanc).
+const ONE_WAY_EDGES = {
+  '10': [
+    ['Chardon-Lagache','Mirabeau'],
+    ['Mirabeau','Javel-André Citroën'],
+    ['Javel-André Citroën',"Église d'Auteuil"],
+    ["Église d'Auteuil",'Michel-Ange-Auteuil'],
+    ['Michel-Ange-Auteuil',"Porte d'Auteuil"],
+    ["Porte d'Auteuil",'Michel-Ange-Molitor'],
+  ],
+  '7b': [
+    ['Botzaris','Place des Fêtes'],
+    ['Place des Fêtes','Pré-Saint-Gervais'],
+    ['Pré-Saint-Gervais','Danube'],
+    ['Danube','Botzaris'],
+  ],
+};
+const oneWaySet = lid => new Set((ONE_WAY_EDGES[lid] || []).map(([a,b]) => `${a}->${b}`));
+// Sens autorisé(s) pour une paire de stations physiquement adjacentes (a,b) sur la
+// ligne `lid`. Si la paire ne figure pas dans ONE_WAY_EDGES, les deux sens sont
+// autorisés (comportement bidirectionnel inchangé pour toutes les lignes normales).
+function allowedDirection(lid, a, b) {
+  const ow = ONE_WAY_EDGES[lid];
+  if (!ow || !ow.length) return { fwd: true, bwd: true };
+  const set = oneWaySet(lid);
+  const restricted = set.has(`${a}->${b}`) || set.has(`${b}->${a}`);
+  if (!restricted) return { fwd: true, bwd: true };
+  return { fwd: set.has(`${a}->${b}`), bwd: set.has(`${b}->${a}`) };
+}
+
 function lineAdj(lid) {
   const ladj = {};
+  const push = (a, b) => { if (!ladj[a]) ladj[a] = []; ladj[a].push(b); };
   for (const seg of SEG[lid]) {
     for (let i = 0; i < seg.length - 1; i++) {
       const a = seg[i], b = seg[i+1];
-      if (!ladj[a]) ladj[a] = []; if (!ladj[b]) ladj[b] = [];
-      ladj[a].push(b); ladj[b].push(a);
+      const { fwd, bwd } = allowedDirection(lid, a, b);
+      if (fwd) push(a, b);
+      if (bwd) push(b, a);
     }
   }
   return ladj;
 }
 
 function intermediateStations(from, to, lid) {
-  for (const seg of SEG[lid]) {
-    const iF = seg.indexOf(from), iT = seg.indexOf(to);
-    if (iF !== -1 && iT !== -1) {
-      const [lo, hi] = iF < iT ? [iF, iT] : [iT, iF];
-      return seg.slice(lo + 1, hi);
+  // Le raccourci par index suppose une distance symétrique entre deux stations
+  // d'un même segment ; invalide sur une boucle à sens unique (ONE_WAY_EDGES),
+  // où l'on doit emprunter le BFS orienté ci-dessous dans tous les cas.
+  if (!(ONE_WAY_EDGES[lid] && ONE_WAY_EDGES[lid].length)) {
+    for (const seg of SEG[lid]) {
+      const iF = seg.indexOf(from), iT = seg.indexOf(to);
+      if (iF !== -1 && iT !== -1) {
+        const [lo, hi] = iF < iT ? [iF, iT] : [iT, iF];
+        return seg.slice(lo + 1, hi);
+      }
     }
   }
   const ladj = lineAdj(lid);
@@ -196,9 +255,13 @@ function linesAt(station) {
 }
 
 function stopsOnLine(from, to, lid) {
-  for (const seg of SEG[lid]) {
-    const iF = seg.indexOf(from), iT = seg.indexOf(to);
-    if (iF !== -1 && iT !== -1) return Math.abs(iF - iT);
+  // Même remarque que pour intermediateStations : Math.abs(iF - iT) suppose une
+  // distance symétrique, fausse sur une boucle à sens unique → BFS orienté direct.
+  if (!(ONE_WAY_EDGES[lid] && ONE_WAY_EDGES[lid].length)) {
+    for (const seg of SEG[lid]) {
+      const iF = seg.indexOf(from), iT = seg.indexOf(to);
+      if (iF !== -1 && iT !== -1) return Math.abs(iF - iT);
+    }
   }
   const ladj = lineAdj(lid);
   const dist = {[from]: 0}, q = [from];
@@ -272,6 +335,17 @@ function buildGraph(bannedLines = [], noChangeStations = [], bannedStations = []
     if (!adj[a]) adj[a] = []; if (!adj[b]) adj[b] = [];
     adj[a].push({to:b,t}); adj[b].push({to:a,t});
   };
+  // Arête de ligne consciente du sens de circulation : sur une boucle à sens
+  // unique (ONE_WAY_EDGES), on n'ajoute que la (les) direction(s) réellement
+  // empruntées en exploitation. Pour toutes les autres lignes, fwd === bwd ===
+  // true → comportement strictement identique à `add` (bidirectionnel).
+  const addLineEdge = (a, b, lid, t) => {
+    const { fwd, bwd } = allowedDirection(lid, a, b);
+    const A = `${a}|||${lid}`, B = `${b}|||${lid}`;
+    if (!adj[A]) adj[A] = []; if (!adj[B]) adj[B] = [];
+    if (fwd) adj[A].push({to:B,t});
+    if (bwd) adj[B].push({to:A,t});
+  };
   for (const [lid, segs] of Object.entries(SEG)) {
     if (bannedLines.includes(lid)) continue;
     for (const seg of segs) {
@@ -280,7 +354,7 @@ function buildGraph(bannedLines = [], noChangeStations = [], bannedStations = []
         // Stations bannies ("pas_passer_par") : on retire complètement leurs nœuds
         // du graphe, Dijkstra ne peut donc jamais les traverser.
         if (banned.has(a) || banned.has(b)) continue;
-        add(`${a}|||${lid}`, `${b}|||${lid}`, 90);
+        addLineEdge(a, b, lid, 90);
         if (!sl[a]) sl[a] = new Set(); if (!sl[b]) sl[b] = new Set();
         sl[a].add(lid); sl[b].add(lid);
       }
