@@ -6,7 +6,7 @@ import {
 } from "./metro.js";
 import {
   computeReqStatus, REQ_LABELS, isConstraintBinding,
-  dayNumber, dayKey, getDailyPuzzle, recordResult, todaysResult, loadStore,
+  dayNumber, dayKey, getDailyPuzzle, recordResult, todaysResult, loadStore, saveStore,
 } from "./puzzles.js";
 
 const T = {
@@ -106,6 +106,9 @@ export default function Metrodoku() {
   }, []);
 
   const [phase,     setPhase]     = useState('playing');
+  const [changerNoticeDismissed, setChangerNoticeDismissed] = useState(
+    () => !!loadStore().changerNoticeDismissed
+  );
   const [route,     setRoute]     = useState([{st: puzzle.from}]);
   const [curSt,     setCurSt]     = useState(puzzle.from);
   const [curLine,   setCurLine]   = useState(null);
@@ -553,6 +556,31 @@ export default function Metrodoku() {
               <span style={{color:T.text}}>4 min</span>, chaque station{' '}
               <span style={{color:T.text}}>1 min 30</span>.
             </div>
+
+            {/* Notice "CHANGER À" : s'affiche si la contrainte est présente et non encore
+                dismissée. Un clic sur "Compris" mémorise le choix en localStorage. */}
+            {puzzle.req.some(r => r.type === 'changer') && !changerNoticeDismissed && (
+              <div style={{fontSize:13, color:C.goal.fg, lineHeight:1.6, padding:'11px 14px',
+                background:C.goal.bg, borderRadius:10, border:`1px solid ${C.goal.bd}`,
+                display:'flex', flexDirection:'column', gap:8}}>
+                <span>
+                  La contrainte <strong>CHANGER À</strong> impose d'emprunter{' '}
+                  <strong>deux lignes différentes</strong> à cette station : il faut{' '}
+                  arriver sur une ligne et <strong>repartir sur une autre</strong>.{' '}
+                  Traverser la station sans changer de ligne ne suffit pas.
+                </span>
+                <button
+                  onClick={() => {
+                    setChangerNoticeDismissed(true);
+                    saveStore({...loadStore(), changerNoticeDismissed: true});
+                  }}
+                  style={{alignSelf:'flex-end', fontSize:12, fontWeight:700,
+                    padding:'4px 16px', borderRadius:20, border:'none', cursor:'pointer',
+                    background:C.goal.fg, color:C.goal.bg}}>
+                  Compris
+                </button>
+              </div>
+            )}
 
             {/* Timeline */}
             <div style={{display:'flex', flexDirection:'column'}}>
