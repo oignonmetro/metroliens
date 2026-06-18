@@ -177,7 +177,7 @@ function difficultyScore(req, banned, freeOpt, finalOpt) {
   const detourMin = (finalOpt.time - freeOpt.time) / 60;
   const transfers = countTransfers(finalOpt.path);
   const typeWeight = req.reduce((a, r) => a + (TYPE_WEIGHT[r.type] || 1), 0) + (banned.length ? 1.8 : 0);
-  return totalMin * 0.5 + detourMin * 1.2 + transfers * 1.5 + typeWeight * 3;
+  return totalMin * 0.5 + detourMin * 2.5 + transfers * 1.5 + typeWeight * 3;
 }
 // Bandes-cibles de score par jour (0=lundi … 6=dimanche), légèrement chevauchantes
 // pour rester atteignables tout en imposant une tendance nettement croissante.
