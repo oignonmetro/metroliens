@@ -322,6 +322,7 @@ export default function Metrodoku() {
       : r.type === 'pas_changer'      ? `il change à ${r.st}`
       : r.type === 'changer'          ? `il ne change pas à ${r.st}`
       : r.type === 'pas_utiliser_ligne' ? `il emprunte la ligne ${r.ln}`
+      : r.type === 'utiliser_ligne'    ? `il n'emprunte pas la ligne ${r.ln}`
       :                                 `il ne passe pas par ${r.st}`
     ),
   ];
@@ -521,7 +522,7 @@ export default function Metrodoku() {
                       background:bg, color:col, borderRadius:20, border:`1px solid ${bd}`,
                       display:'inline-flex', alignItems:'center', gap:4,
                       textDecoration:status==='satisfied'?'line-through':'none'}}>
-                      {r.type==='pas_utiliser_ligne' ? <LineBadge lid={r.ln} size={18}/> : r.st}
+                      {(r.type==='pas_utiliser_ligne'||r.type==='utiliser_ligne') ? <LineBadge lid={r.ln} size={18}/> : r.st}
                     </span>
                   </div>
                 );

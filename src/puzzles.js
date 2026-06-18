@@ -64,7 +64,14 @@ function computeReqStatus(routeSteps, req, final = false, banned = []) {
       }
       return 'satisfied';
     }
-    return 'pending';
+    if (r.type === 'utiliser_ligne') {
+      // Imposé d'emprunter la ligne r.ln au moins sur un segment. Évalué à la fin.
+      if (!final) return 'pending';
+      for (let i = 1; i < routeSteps.length; i++) {
+        if (routeSteps[i].chosenLine === r.ln) return 'satisfied';
+      }
+      return 'failed';
+    }
   });
 }
 
@@ -74,6 +81,7 @@ const REQ_LABELS = {
   pas_changer:       'SANS CHANGER À',
   pas_passer_par:    'ÉVITER',
   pas_utiliser_ligne:'SANS LA LIGNE',
+  utiliser_ligne:    'AVEC LA LIGNE',
 };
 
 // Puzzles de secours : utilisés si le générateur échoue après 300 essais.
@@ -138,10 +146,10 @@ function getProfile(dayN) {
   if (dow === 0) return { nbReq: 1, types: ['passer_par'],                              minBase: 600,  allowBanned: false };
   if (dow === 1) return { nbReq: 1, types: ['passer_par','changer'],                   minBase: 600,  allowBanned: false };
   if (dow === 2) return { nbReq: 1, types: ['passer_par','changer','pas_changer'],      minBase: 720,  allowBanned: false };
-  if (dow === 3) return { nbReq: 'rand', types: ['passer_par','changer','pas_changer','pas_passer_par','pas_utiliser_ligne'], minBase: 720, allowBanned: false };
-  if (dow === 4) return { nbReq: 2,      types: ['passer_par','changer','pas_changer','pas_passer_par','pas_utiliser_ligne'], minBase: 720, allowBanned: false };
-  if (dow === 5) return { nbReq: 2,      types: ['passer_par','changer','pas_changer','pas_passer_par','pas_utiliser_ligne'], minBase: 840, allowBanned: true  };
-                 return { nbReq: 2,      types: ['passer_par','changer','pas_changer','pas_passer_par','pas_utiliser_ligne'], minBase: 900, allowBanned: true  };
+  if (dow === 3) return { nbReq: 'rand', types: ['passer_par','changer','pas_changer','pas_passer_par','pas_utiliser_ligne','utiliser_ligne'], minBase: 720, allowBanned: false };
+  if (dow === 4) return { nbReq: 2,      types: ['passer_par','changer','pas_changer','pas_passer_par','pas_utiliser_ligne','utiliser_ligne'], minBase: 720, allowBanned: false };
+  if (dow === 5) return { nbReq: 2,      types: ['passer_par','changer','pas_changer','pas_passer_par','pas_utiliser_ligne','utiliser_ligne'], minBase: 840, allowBanned: true  };
+                 return { nbReq: 2,      types: ['passer_par','changer','pas_changer','pas_passer_par','pas_utiliser_ligne','utiliser_ligne'], minBase: 900, allowBanned: true  };
 }
 
 // ── Score de difficulté ──────────────────────────────────────────────────
@@ -156,7 +164,8 @@ function getProfile(dayN) {
 // que de s'arrêter sur le premier puzzle valide rencontré (qui peut être trivial,
 // p.ex. une contrainte qui ne coûte qu'1min30 de détour un jeudi).
 const TYPE_WEIGHT = {
-  passer_par: 1, changer: 1.2, pas_changer: 1.6, pas_passer_par: 1.5, pas_utiliser_ligne: 1.8,
+  passer_par: 1, changer: 1.2, pas_changer: 1.6, pas_passer_par: 1.5,
+  pas_utiliser_ligne: 1.8, utiliser_ligne: 1.7,
 };
 function countTransfers(path) {
   let t = 0;
@@ -187,6 +196,20 @@ function pickRand(arr, rand) { return arr[Math.floor(rand() * arr.length)]; }
 // Retourne true si le chemin optimal emprunte une des lignes indiquées.
 function pathUsesLines(path, lines) {
   return path.some(node => lines.includes(node.ln));
+}
+
+// Trouve l'optimal contraint qui emprunte obligatoirement la ligne lineId,
+// en testant chaque station de cette ligne comme point de passage forcé.
+function findOptimalViaLine(adj, sl, from, to, lineId, posReqs) {
+  let best = null;
+  for (const seg of SEG[lineId]) {
+    for (const st of seg) {
+      if (st === from || st === to) continue;
+      const r = findOptimal(adj, sl, from, to, [...posReqs, {st, type:'passer_par'}]);
+      if (r && (!best || r.time < best.time)) best = r;
+    }
+  }
+  return best;
 }
 
 // Génère le puzzle du jour de façon déterministe à partir de dayN.
@@ -251,12 +274,14 @@ function generatePuzzle(dayN) {
         if (t === 'changer'            && req.some(r => r.type === 'changer'))            return false;
         if (t === 'pas_passer_par'     && req.some(r => r.type === 'pas_passer_par'))     return false;
         if (t === 'pas_utiliser_ligne' && req.some(r => r.type === 'pas_utiliser_ligne')) return false;
+        if (t === 'utiliser_ligne'     && req.some(r => r.type === 'utiliser_ligne'))     return false;
         // Contraintes de ligne tirées en dernier : la ligne est alors choisie d'après
         // l'optimal DÉJÀ dévié par les contraintes de station (passer_par/changer),
         // donc réellement mordante au lieu d'être prise sur le trajet libre — où une
         // ligne empruntée sur le plus court chemin devient souvent redondante une fois
         // le détour imposé. Avec nbReq=1, isLastReq est toujours vrai (inchangé).
         if (t === 'pas_utiliser_ligne' && !isLastReq) return false;
+        if (t === 'utiliser_ligne'     && !isLastReq) return false;
         return true;
       });
       if (!availableTypes.length) { valid = false; break; }
@@ -330,6 +355,17 @@ function generatePuzzle(dayN) {
         );
         if (!onPathLines.length) { valid = false; break; }
         candidateLn = pickRand(onPathLines, rand);
+      } else if (type === 'utiliser_ligne') {
+        // Ligne NON empruntée par l'optimal courant (binding), non bannie, non déjà
+        // utilisée dans une contrainte de ligne (utiliser ou pas_utiliser).
+        const excludedLns = req
+          .filter(r => r.type === 'utiliser_ligne' || r.type === 'pas_utiliser_ligne')
+          .map(r => r.ln);
+        const candidates = ALL_LINES.filter(l =>
+          !banned.includes(l) && !excludedLns.includes(l) && !pathUsesLines(curOpt.path, [l])
+        );
+        if (!candidates.length) { valid = false; break; }
+        candidateLn = pickRand(candidates, rand);
       } else { // changer
         // Station d'interchange sur le chemin courant où l'optimal ne change pas déjà
         const notChanging = interchangesOnPath.filter(s =>
@@ -339,7 +375,9 @@ function generatePuzzle(dayN) {
         candidateSt = pickRand(notChanging, rand);
       }
 
-      const r = type === 'pas_utiliser_ligne' ? { ln: candidateLn, type } : { st: candidateSt, type };
+      const r = (type === 'pas_utiliser_ligne' || type === 'utiliser_ligne')
+        ? { ln: candidateLn, type }
+        : { st: candidateSt, type };
 
       // Vérifier que la contrainte est bien contraignante vs baseOpt ET vs curOpt.
       // Le test vs baseOpt garantit qu'elle a un sens absolu (non déjà satisfaite
@@ -358,8 +396,11 @@ function generatePuzzle(dayN) {
     const bannedSts   = req.filter(r => r.type === 'pas_passer_par').map(r => r.st);
     const bannedLns   = req.filter(r => r.type === 'pas_utiliser_ligne').map(r => r.ln);
     const finalGraph = buildGraph([...banned, ...bannedLns], noChangeSts, bannedSts);
-    const finalOpt = findOptimal(finalGraph.adj, finalGraph.sl, from, to,
-                                  req.filter(r => r.type === 'passer_par' || r.type === 'changer'));
+    const posReqs = req.filter(r => r.type === 'passer_par' || r.type === 'changer');
+    const utiliserLn = req.find(r => r.type === 'utiliser_ligne');
+    const finalOpt = utiliserLn
+      ? findOptimalViaLine(finalGraph.adj, finalGraph.sl, from, to, utiliserLn.ln, posReqs)
+      : findOptimal(finalGraph.adj, finalGraph.sl, from, to, posReqs);
     if (!finalOpt) continue;
 
     // 7. Revalidation croisée (« leave-one-out ») : chaque contrainte doit rester
@@ -454,6 +495,10 @@ function isConstraintBinding(req, baseOpt) {
   if (req.type === 'pas_utiliser_ligne') {
     // contraignant si l'optimal libre emprunte justement cette ligne
     return pathUsesLines(baseOpt.path, [req.ln]);
+  }
+  if (req.type === 'utiliser_ligne') {
+    // contraignant si l'optimal libre n'emprunte PAS cette ligne (l'imposer ajoute un détour)
+    return !pathUsesLines(baseOpt.path, [req.ln]);
   }
   return true;
 }
