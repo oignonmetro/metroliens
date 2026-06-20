@@ -384,7 +384,7 @@ function generatePuzzle(dayN) {
       // sur le trajet libre). Le test vs curOpt garantit qu'elle ajoute une vraie
       // difficulté dans le contexte des contraintes déjà choisies — sans quoi deux
       // contraintes pourraient s'annuler mutuellement (l'une satisfait l'autre).
-      if (!isConstraintBinding(r, baseOpt) || !isConstraintBinding(r, curOpt)) { valid = false; break; }
+      if (!isConstraintBinding(r, baseOpt, {adj, sl, from, to}) || !isConstraintBinding(r, curOpt, {adj: curGraph.adj, sl: curGraph.sl, from, to})) { valid = false; break; }
 
       req.push(r);
     }
@@ -418,7 +418,7 @@ function generatePuzzle(dayN) {
       const g = buildGraph([...banned, ...blns], ncs, bsts);
       const optWithout = findOptimal(g.adj, g.sl, from, to,
         others.filter(r => r.type === 'passer_par' || r.type === 'changer'));
-      if (!optWithout || !isConstraintBinding(req[k], optWithout)) allBinding = false;
+      if (!optWithout || !isConstraintBinding(req[k], optWithout, {adj: g.adj, sl: g.sl, from, to})) allBinding = false;
     }
     if (!allBinding) continue;
 
@@ -473,11 +473,18 @@ function pathChangesAt(path, st) {
   return false;
 }
 
-function isConstraintBinding(req, baseOpt) {
+const MIN_DETOUR_PASSER_PAR = 5; // minutes
+
+function isConstraintBinding(req, baseOpt, ctx = null) {
   if (!baseOpt) return true;
   if (req.type === 'passer_par') {
-    // contraignant si l'optimal libre ne passe pas déjà par la station
-    return !pathPassesThrough(baseOpt.path, req.st);
+    if (pathPassesThrough(baseOpt.path, req.st)) return false;
+    // Quand le contexte (adj/sl/from/to) est fourni, vérifier que le détour est ≥ seuil
+    if (ctx) {
+      const withReq = findOptimal(ctx.adj, ctx.sl, ctx.from, ctx.to, [req]);
+      if (!withReq || (withReq.time - baseOpt.time) < MIN_DETOUR_PASSER_PAR) return false;
+    }
+    return true;
   }
   if (req.type === 'changer') {
     // contraignant si l'optimal libre ne change pas déjà de ligne ici
