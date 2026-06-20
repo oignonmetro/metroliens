@@ -384,7 +384,7 @@ function generatePuzzle(dayN) {
       // sur le trajet libre). Le test vs curOpt garantit qu'elle ajoute une vraie
       // difficulté dans le contexte des contraintes déjà choisies — sans quoi deux
       // contraintes pourraient s'annuler mutuellement (l'une satisfait l'autre).
-      if (!isConstraintBinding(r, baseOpt, {adj, sl, from, to}) || !isConstraintBinding(r, curOpt, {adj: curGraph.adj, sl: curGraph.sl, from, to})) { valid = false; break; }
+      if (!isConstraintBinding(r, baseOpt) || !isConstraintBinding(r, curOpt)) { valid = false; break; }
 
       req.push(r);
     }
@@ -416,9 +416,20 @@ function generatePuzzle(dayN) {
       const bsts = others.filter(r => r.type === 'pas_passer_par').map(r => r.st);
       const blns = others.filter(r => r.type === 'pas_utiliser_ligne').map(r => r.ln);
       const g = buildGraph([...banned, ...blns], ncs, bsts);
-      const optWithout = findOptimal(g.adj, g.sl, from, to,
-        others.filter(r => r.type === 'passer_par' || r.type === 'changer'));
-      if (!optWithout || !isConstraintBinding(req[k], optWithout, {adj: g.adj, sl: g.sl, from, to})) allBinding = false;
+      const otherPosReqs = others.filter(r => r.type === 'passer_par' || r.type === 'changer');
+      const optWithout = findOptimal(g.adj, g.sl, from, to, otherPosReqs);
+      if (!optWithout || !isConstraintBinding(req[k], optWithout)) { allBinding = false; break; }
+      // Seuil de détour pour passer_par, UNIQUEMENT dans les puzzles à plusieurs
+      // contraintes. Le risque visé est qu'un passer_par soit naturellement traversé
+      // par l'itinéraire déjà imposé par les AUTRES contraintes — il devient alors un
+      // simple indice plutôt qu'une vraie difficulté. Avec une seule contrainte ce
+      // risque n'existe pas, et un petit détour y est légitime (jours faciles), donc on
+      // n'applique pas le seuil (cela fausserait aussi les bandes de difficulté basses).
+      // Le détour réel = finalOpt.time − optWithout.time : passer_par n'ajoute aucun
+      // bannissement, donc finalGraph et g sont identiques, la seule différence étant
+      // l'inclusion de cette contrainte. Aucun Dijkstra supplémentaire.
+      if (req.length > 1 && !utiliserLn && req[k].type === 'passer_par'
+          && (finalOpt.time - optWithout.time) < MIN_DETOUR_PASSER_PAR) { allBinding = false; break; }
     }
     if (!allBinding) continue;
 
@@ -475,16 +486,14 @@ function pathChangesAt(path, st) {
 
 const MIN_DETOUR_PASSER_PAR = 5 * 60; // 5 minutes en secondes
 
-function isConstraintBinding(req, baseOpt, ctx = null) {
+function isConstraintBinding(req, baseOpt) {
   if (!baseOpt) return true;
   if (req.type === 'passer_par') {
-    if (pathPassesThrough(baseOpt.path, req.st)) return false;
-    // Quand le contexte (adj/sl/from/to) est fourni, vérifier que le détour est ≥ seuil
-    if (ctx) {
-      const withReq = findOptimal(ctx.adj, ctx.sl, ctx.from, ctx.to, [req]);
-      if (!withReq || (withReq.time - baseOpt.time) < MIN_DETOUR_PASSER_PAR) return false;
-    }
-    return true;
+    // contraignant si l'optimal de référence ne passe pas déjà par la station.
+    // Le SEUIL de détour minimum (MIN_DETOUR_PASSER_PAR) est vérifié séparément
+    // dans le leave-one-out de generatePuzzle, où le détour réel se déduit sans
+    // calcul supplémentaire (finalOpt.time − optWithout.time).
+    return !pathPassesThrough(baseOpt.path, req.st);
   }
   if (req.type === 'changer') {
     // contraignant si l'optimal libre ne change pas déjà de ligne ici
