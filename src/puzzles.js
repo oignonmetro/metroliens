@@ -473,7 +473,7 @@ function pathChangesAt(path, st) {
   return false;
 }
 
-const MIN_DETOUR_PASSER_PAR = 5; // minutes
+const MIN_DETOUR_PASSER_PAR = 5 * 60; // 5 minutes en secondes
 
 function isConstraintBinding(req, baseOpt, ctx = null) {
   if (!baseOpt) return true;
