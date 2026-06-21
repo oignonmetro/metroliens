@@ -119,6 +119,11 @@ export default function Metrodoku() {
   const [reqStatus, setReqStatus] = useState(() => puzzle.req.map(()=>'pending'));
   const [stats,       setStats]       = useState(null);   // stats à jour après enregistrement
   const [alreadyDone, setAlreadyDone] = useState(false);  // partie du jour déjà jouée
+  const [attempts,    setAttempts]    = useState(0);      // nb d'essais écoulés (0 ou 1)
+  // Route et temps du 1er essai invalide, conservés pour l'afficher en phase 'second-chance'
+  const [firstRoute,    setFirstRoute]    = useState(null);
+  const [firstTime,     setFirstTime]     = useState(null);
+  const [firstReqStatus,setFirstReqStatus]= useState(null);
 
   // Au montage : si la partie du jour est déjà enregistrée, on verrouille et on
   // restaure directement l'écran de résultat (empêche de rejouer le même jour).
@@ -199,13 +204,21 @@ export default function Metrodoku() {
       setReqStatus(computeReqStatus(newRoute, puzzle.req, isFinal, puzzle.banned));
       // Pas d'avertissement : l'erreur est révélée silencieusement à l'écran de fin.
       if (isFinal) {
-        const updated = recordResult({
-          dayK: dayKey(), dayN: dayNumber(), puzzleNo: puzzle.puzzleNo,
-          playerTime: newTime, optimalTime: optimal ? optimal.time : null,
-          ratio: null, success: false, route: newRoute,
-        });
-        setStats(updated);
-        setPhase('done');
+        if (attempts === 0) {
+          // Premier essai invalide → seconde chance
+          setFirstRoute(newRoute); setFirstTime(newTime);
+          setFirstReqStatus(computeReqStatus(newRoute, puzzle.req, true, puzzle.banned));
+          setAttempts(1);
+          setPhase('second-chance');
+        } else {
+          const updated = recordResult({
+            dayK: dayKey(), dayN: dayNumber(), puzzleNo: puzzle.puzzleNo,
+            playerTime: newTime, optimalTime: optimal ? optimal.time : null,
+            ratio: null, success: false, route: newRoute,
+          });
+          setStats(updated);
+          setPhase('done');
+        }
       }
       return;
     }
@@ -251,11 +264,15 @@ export default function Metrodoku() {
     const fStatus = computeReqStatus(newRoute, puzzle.req, st === puzzle.to, puzzle.banned);
     setReqStatus(fStatus);
     if (st === puzzle.to) {
-      // Enregistrer le résultat du jour (une seule fois) et calculer le score.
-      // Un itinéraire contenant un saut impossible est invalide, quelles que soient
-      // les contraintes.
       const hasImpossible = newRoute.some(s => s.impossible);
       const success = !hasImpossible && !puzzle.req.some((r, i) => fStatus[i] === 'failed');
+      if (!success && attempts === 0) {
+        // Premier essai invalide → offrir la seconde chance sans enregistrer
+        setFirstRoute(newRoute); setFirstTime(newTime); setFirstReqStatus(fStatus);
+        setAttempts(1);
+        setPhase('second-chance');
+        return;
+      }
       const ratio = optimal ? Math.round((newTime / optimal.time) * 100) : null;
       const updated = recordResult({
         dayK: dayKey(), dayN: dayNumber(), puzzleNo: puzzle.puzzleNo,
@@ -267,10 +284,21 @@ export default function Metrodoku() {
     }
   }, [curSt, curLine, totalTime, visited, route, puzzle, reqStatus, optimal]);
 
+  // Passe en seconde chance : repart de zéro (attempts déjà à 1).
+  const handleSecondChance = () => {
+    setPhase('playing');
+    setRoute([{st: puzzle.from}]);
+    setCurSt(puzzle.from); setCurLine(null);
+    setTotalTime(0); setVisited(new Set([puzzle.from]));
+    setReqStatus(puzzle.req.map(()=>'pending'));
+    setQuery(''); setError(null);
+  };
+
   // Réinitialise la tentative EN COURS (uniquement pendant le jeu). Ne permet
   // pas de rejouer une partie déjà terminée : en phase 'done', ce bouton n'existe pas.
   const handleRestart = () => {
     if (alreadyDone) return;
+    setAttempts(0); setFirstRoute(null); setFirstTime(null); setFirstReqStatus(null);
     setPhase('playing');
     setRoute([{st: puzzle.from}]);
     setCurSt(puzzle.from); setCurLine(null);
@@ -548,6 +576,15 @@ export default function Metrodoku() {
         {/* ── JEU ── */}
         {phase==='playing' && (
           <>
+            {/* Indicateur de seconde chance */}
+            {attempts === 1 && (
+              <div style={{fontSize:12, fontWeight:700, color:C.warn.fg, textAlign:'center',
+                padding:'7px 12px', background:C.warn.bg, borderRadius:8,
+                border:`1px solid ${C.warn.bd}`, letterSpacing:'0.3px'}}>
+                2ᵉ essai — dernier essai
+              </div>
+            )}
+
             {/* Règle du jeu */}
             <div style={{fontSize:13, color:T.muted, lineHeight:1.6, padding:'11px 14px',
               background:T.surf1, borderRadius:10, border:`1px solid ${T.border}`}}>
@@ -670,6 +707,57 @@ export default function Metrodoku() {
             </div>
           </>
         )}
+
+        {/* ── SECONDE CHANCE ── */}
+        {phase==='second-chance' && firstRoute && (() => {
+          const firstFailed = puzzle.req.filter((r,i) => (firstReqStatus||[])[i] === 'failed');
+          const firstImpossible = firstRoute.filter(s => s.impossible);
+          const reasons = [
+            ...firstImpossible.map(s => s.reason),
+            ...firstFailed.map(r =>
+              r.type === 'pas_passer_par'     ? `il passe par ${r.st}`
+              : r.type === 'pas_changer'      ? `il change à ${r.st}`
+              : r.type === 'changer'          ? `il ne change pas à ${r.st}`
+              : r.type === 'pas_utiliser_ligne' ? `il emprunte la ligne ${r.ln}`
+              : r.type === 'utiliser_ligne'    ? `il n'emprunte pas la ligne ${r.ln}`
+              :                                 `il ne passe pas par ${r.st}`
+            ),
+          ];
+          return (
+            <div style={{display:'flex', flexDirection:'column', gap:14}}>
+              <div style={{padding:'20px', borderRadius:12, background:C.invalid.bg,
+                border:`1px solid ${C.invalid.bd}`, textAlign:'center'}}>
+                <div style={{fontSize:15, fontWeight:700, color:C.invalid.fg, marginBottom:12}}>
+                  Itinéraire invalide car {reasons.join(' et ')}.
+                </div>
+                <div style={{fontSize:13, color:T.muted, marginBottom:18}}>
+                  Vous disposez d'une seconde chance.
+                </div>
+                <div style={{display:'flex', gap:10, justifyContent:'center', flexWrap:'wrap'}}>
+                  <button onClick={handleSecondChance} style={{
+                    padding:'10px 22px', borderRadius:8, border:'none', cursor:'pointer',
+                    background:T.accent, color:'#fff', fontWeight:700, fontSize:14,
+                  }}>Réessayer</button>
+                  <button onClick={() => {
+                    const updated = recordResult({
+                      dayK: dayKey(), dayN: dayNumber(), puzzleNo: puzzle.puzzleNo,
+                      playerTime: firstTime, optimalTime: optimal ? optimal.time : null,
+                      ratio: null, success: false, route: firstRoute,
+                    });
+                    setStats(updated);
+                    setRoute(firstRoute); setTotalTime(firstTime);
+                    setReqStatus(firstReqStatus || puzzle.req.map(()=>'pending'));
+                    setPhase('done');
+                  }} style={{
+                    padding:'10px 22px', borderRadius:8, cursor:'pointer', fontWeight:600,
+                    fontSize:14, background:'transparent',
+                    border:`1px solid ${C.invalid.bd}`, color:C.invalid.fg,
+                  }}>Voir le résultat</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── FIN ── */}
         {phase==='done' && optimal && (
