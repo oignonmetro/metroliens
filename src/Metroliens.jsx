@@ -7,6 +7,7 @@ import {
 import {
   computeReqStatus, REQ_LABELS, isConstraintBinding,
   dayNumber, dayKey, getDailyPuzzle, recordResult, todaysResult, loadStore, saveStore,
+  refreshStreaks,
 } from "./puzzles.js";
 
 const T = {
@@ -130,7 +131,10 @@ export default function Metrodoku() {
   useEffect(() => {
     const dk = dayKey();
     // Charger les stats existantes pour afficher la série en cours dès l'ouverture.
-    setStats(loadStore());
+    // refreshStreaks « vieillit » d'abord les séries : si le joueur n'a pas joué la
+    // veille, ses compteurs sont remis à zéro dès l'ouverture de la page, sans attendre
+    // qu'il réponde à l'énigme du jour.
+    setStats(refreshStreaks(dayNumber()));
     const prev = todaysResult(dk);
     if (prev) {
       setAlreadyDone(true);

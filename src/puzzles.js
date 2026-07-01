@@ -616,8 +616,29 @@ function todaysResult(dayK) {
   return store.lastDay === dayK ? store.lastResult : null;
 }
 
+// « Vieillit » les séries à l'ouverture de la page : une série (jours réussis ou
+// optimaux consécutifs) n'est vivante que si sa dernière occurrence date d'AUJOURD'HUI
+// (déjà jouée) ou d'HIER (peut encore être prolongée en jouant). Si la dernière
+// occurrence est plus ancienne, le joueur a manqué au moins un jour : la série est
+// cassée et doit afficher 0 immédiatement, sans attendre qu'il réponde à l'énigme.
+// La remise à zéro est persistée pour rester cohérente entre rechargements.
+function refreshStreaks(dayN = dayNumber()) {
+  const store = loadStore();
+  const alive = (lastN) => lastN === dayN || lastN === dayN - 1;
+  let changed = false;
+  const next = { ...store };
+  if ((store.streak || 0) > 0 && !alive(store.lastDayN)) {
+    next.streak = 0; changed = true;
+  }
+  if ((store.optimalStreak || 0) > 0 && !alive(store.lastOptDayN)) {
+    next.optimalStreak = 0; changed = true;
+  }
+  if (changed) saveStore(next);
+  return next;
+}
+
 export {
   computeReqStatus, REQ_LABELS, PUZZLES, FALLBACK_PUZZLES, pathPassesThrough, pathChangesAt,
   isConstraintBinding, dayNumber, dayKey, getDailyPuzzle, generatePuzzle,
-  loadStore, saveStore, recordResult, todaysResult,
+  loadStore, saveStore, recordResult, todaysResult, refreshStreaks,
 };
