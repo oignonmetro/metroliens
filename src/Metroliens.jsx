@@ -605,8 +605,8 @@ export default function Metrodoku() {
                 background:C.goal.bg, borderRadius:10, border:`1px solid ${C.goal.bd}`,
                 display:'flex', flexDirection:'column', gap:8}}>
                 <span>
-                  La contrainte <strong>CHANGER À</strong> impose d'emprunter{' '}
-                  <strong>deux lignes différentes</strong> à cette station : il faut{' '}
+                  La contrainte <strong>CHANGER À</strong> empêche de continuer sur{' '}
+                  <strong>une seule ligne</strong> à partir de cette station : il faut{' '}
                   arriver sur une ligne et <strong>repartir sur une autre</strong>.{' '}
                   Traverser la station sans changer de ligne ne suffit pas.
                 </span>
