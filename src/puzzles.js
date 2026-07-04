@@ -148,8 +148,8 @@ function getProfile(dayN) {
   if (dow === 2) return { nbReq: 1, types: ['passer_par','changer','pas_changer'],      minBase: 720,  allowBanned: false };
   if (dow === 3) return { nbReq: 'rand', types: ['passer_par','changer','pas_changer','pas_passer_par','pas_utiliser_ligne','utiliser_ligne'], minBase: 720, allowBanned: false };
   if (dow === 4) return { nbReq: 2,      types: ['passer_par','changer','pas_changer','pas_passer_par','pas_utiliser_ligne','utiliser_ligne'], minBase: 720, allowBanned: false };
-  if (dow === 5) return { nbReq: 2,      types: ['passer_par','changer','pas_changer','pas_passer_par','pas_utiliser_ligne','utiliser_ligne'], minBase: 840, allowBanned: true  };
-                 return { nbReq: 2,      types: ['passer_par','changer','pas_changer','pas_passer_par','pas_utiliser_ligne','utiliser_ligne'], minBase: 900, allowBanned: true  };
+  if (dow === 5) return { nbReq: 3,      types: ['passer_par','changer','pas_changer','pas_passer_par','pas_utiliser_ligne','utiliser_ligne'], minBase: 840, allowBanned: true  };
+                 return { nbReq: 3,      types: ['passer_par','changer','pas_changer','pas_passer_par','pas_utiliser_ligne','utiliser_ligne'], minBase: 900, allowBanned: true  };
 }
 
 // ── Score de difficulté ──────────────────────────────────────────────────
