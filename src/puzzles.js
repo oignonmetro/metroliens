@@ -25,13 +25,18 @@ function computeReqStatus(routeSteps, req, final = false, banned = []) {
       // (station avant X -> X) et du segment suivant (X -> station après X) :
       // s'il existe une ligne d'arrivée A et une ligne de départ B avec A != B,
       // le changement est possible et donc accepté.
+      // Pendant le jeu (!final), on n'affiche JAMAIS l'échec (rouge) : la contrainte
+      // reste neutre ('pending') tant qu'un changement valide n'est pas constaté, et
+      // ne devient 'satisfied' (vert) qu'à ce moment-là. L'échec définitif n'est
+      // révélé qu'à l'écran de bilan (final), une fois l'itinéraire complet.
       const before = routeSteps[idx - 1].st;
       const after = routeSteps[idx + 1].st;
       const arrLines = directLines(before, r.st, banned);
       const depLines = directLines(r.st, after, banned);
-      if (!arrLines.length || !depLines.length) return 'failed';
+      if (!arrLines.length || !depLines.length) return final ? 'failed' : 'pending';
       const canChange = arrLines.some(a => depLines.some(b => a !== b));
-      return canChange ? 'satisfied' : 'failed';
+      if (canChange) return 'satisfied';
+      return final ? 'failed' : 'pending';
     }
     if (r.type === 'pas_changer') {
       // Interdit de FAIRE SA CORRESPONDANCE à X. Pendant le jeu, on n'évalue
