@@ -7,7 +7,7 @@ import {
 import {
   computeReqStatus, REQ_LABELS, isConstraintBinding,
   dayNumber, dayKey, getDailyPuzzle, recordResult, todaysResult, loadStore, saveStore,
-  refreshStreaks,
+  refreshStreaks, findOptimalViaLine,
 } from "./puzzles.js";
 
 const T = {
@@ -77,9 +77,17 @@ export default function Metrodoku() {
   );
   // Le vrai optimal doit honorer toutes les contraintes : passage pour "passer_par",
   // véritable changement pour "changer", et interdiction de changer pour "pas_changer"
-  // (déjà encodée dans optGraph).
+  // (déjà encodée dans optGraph). La contrainte "utiliser_ligne" impose d'emprunter une
+  // ligne précise : findOptimal seul ne la gère pas, il faut findOptimalViaLine (comme
+  // dans generatePuzzle), sinon l'optimal affiché ignore la ligne imposée.
   const optimal  = useMemo(
-    () => findOptimal(optGraph.adj, optGraph.sl, puzzle.from, puzzle.to, puzzle.req),
+    () => {
+      const utiliserLn = puzzle.req.find(r => r.type === 'utiliser_ligne');
+      const posReqs = puzzle.req.filter(r => r.type === 'passer_par' || r.type === 'changer');
+      return utiliserLn
+        ? findOptimalViaLine(optGraph.adj, optGraph.sl, puzzle.from, puzzle.to, utiliserLn.ln, posReqs)
+        : findOptimal(optGraph.adj, optGraph.sl, puzzle.from, puzzle.to, puzzle.req);
+    },
     [optGraph, puzzle]
   );
   // Contraintes « non contraignantes » : test leave-one-out — une contrainte est
@@ -195,6 +203,23 @@ export default function Metrodoku() {
     const newRoute = [...route, newStep];
     const newTime = totalTime + newStep.time;
     const newVisited = new Set(visited); newVisited.add(st);
+
+    // Blocage manifeste — UNIQUEMENT pour "changer à X". C'est la seule contrainte dont
+    // le respect EXIGE d'inscrire une station précise : un trajet ne peut satisfaire
+    // "changer à X" que si X figure explicitement parmi les correspondances écrites.
+    // On empêche donc la validation tant que X n'est pas écrit (y compris quand le
+    // dernier saut est impossible : ce contrôle passe AVANT la branche « saut
+    // impossible »). Toutes les AUTRES contraintes ne bloquent jamais : elles sont
+    // jugées à l'écran de bilan / seconde chance.
+    if (st === puzzle.to) {
+      const written = new Set(newRoute.map(s => s.st));
+      for (const r of puzzle.req) {
+        if (r.type === 'changer' && !written.has(r.st)) {
+          setError(`Vous devez changer à ${r.st}. Révisez votre itinéraire.`);
+          return;
+        }
+      }
+    }
     // Un saut impossible est enregistré dans le trajet mais ne termine pas la partie :
     // le joueur continue depuis la station choisie (même atteinte de façon invalide)
     // jusqu'à ce qu'il sélectionne la station d'arrivée. L'échec sera révélé à l'écran
@@ -226,41 +251,10 @@ export default function Metrodoku() {
       }
       return;
     }
-    // Fautes manifestes : vérifiées uniquement au moment où le joueur saisit la
-    // station d'arrivée. Une faute est manifeste si elle découle du seul fait
-    // d'avoir ÉCRIT (ou pas) une station dans l'itinéraire explicite :
-    //
-    //   contrainte          faute manifeste            message
-    //   ------------------  -------------------------  -------------------------------
-    //   pas_changer@X       joueur a écrit X           "Vous ne pouvez pas changer à X"
-    //   pas_passer_par@X    joueur a écrit X           "Vous ne devez pas passer par X"
-    //   changer@X           joueur n'a pas écrit X     "Vous devez changer à X"
-    //   passer_par@X        a écrit X / n'a pas écrit  (non manifeste : bilan silencieux)
-    //   pas_utiliser_ligne  (non applicable)           (non manifeste : bilan silencieux)
-    //
-    // passer_par n'est pas manifeste : avoir écrit X ne garantit pas qu'on y soit
-    // « passé » au sens des règles (et ne pas l'avoir écrit n'exclut pas un passage
-    // implicite). pas_utiliser_ligne ne porte pas sur les stations écrites. Ces deux
-    // contraintes ne sont donc jugées qu'à l'écran de bilan.
-    // Si une faute manifeste est détectée, on bloque et on invite à réviser
-    // (aucune mise à jour d'état) ; les autres violations sont jugées en bilan.
-    if (st === puzzle.to) {
-      const written = new Set(newRoute.map(s => s.st));
-      for (const r of puzzle.req) {
-        if (r.type === 'pas_changer' && written.has(r.st)) {
-          setError(`Vous ne pouvez pas changer à ${r.st}. Révisez votre itinéraire.`);
-          return;
-        }
-        if (r.type === 'pas_passer_par' && written.has(r.st)) {
-          setError(`Vous ne devez pas passer par ${r.st}. Révisez votre itinéraire.`);
-          return;
-        }
-        if (r.type === 'changer' && !written.has(r.st)) {
-          setError(`Vous devez changer à ${r.st}. Révisez votre itinéraire.`);
-          return;
-        }
-      }
-    }
+    // Les autres contraintes (passer_par, pas_passer_par, pas_changer, utiliser_ligne,
+    // pas_utiliser_ligne) ne bloquent JAMAIS la validation : elles sont jugées à l'écran
+    // de bilan / seconde chance. Seule "changer à" bloque, et ce contrôle a déjà été fait
+    // plus haut (avant la branche « saut impossible »).
     setRoute(newRoute);
     setTotalTime(newTime);
     setCurSt(st); setCurLine(seg ? seg.chosenLine : null);

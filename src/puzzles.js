@@ -198,15 +198,29 @@ function pathUsesLines(path, lines) {
   return path.some(node => lines.includes(node.ln));
 }
 
-// Trouve l'optimal contraint qui emprunte obligatoirement la ligne lineId,
-// en testant chaque station de cette ligne comme point de passage forcé.
+// Un itinéraire « roule » sur la ligne L s'il parcourt au moins un tronçon sur L,
+// c.-à-d. deux nœuds consécutifs du path sur L entre deux stations distinctes.
+// (Simplement TRAVERSER une station de L en correspondance ne compte pas : le nœud
+// L y est isolé, sans hop L→L adjacent.)
+function pathRidesLine(path, lineId) {
+  for (let i = 1; i < path.length; i++) {
+    if (path[i].ln === lineId && path[i-1].ln === lineId && path[i].st !== path[i-1].st) return true;
+  }
+  return false;
+}
+
+// Trouve l'optimal contraint qui emprunte obligatoirement la ligne lineId, en testant
+// chaque station de cette ligne comme point de passage forcé. Forcer un passage par une
+// station de L ne garantit PAS de rouler sur L (on peut n'y faire que transiter par une
+// autre ligne) : on ne retient donc que les candidats qui roulent réellement sur L.
+// Si aucun candidat ne roule sur L, on renvoie null (le puzzle sera rejeté en génération).
 function findOptimalViaLine(adj, sl, from, to, lineId, posReqs) {
   let best = null;
   for (const seg of SEG[lineId]) {
     for (const st of seg) {
       if (st === from || st === to) continue;
       const r = findOptimal(adj, sl, from, to, [...posReqs, {st, type:'passer_par'}]);
-      if (r && (!best || r.time < best.time)) best = r;
+      if (r && pathRidesLine(r.path, lineId) && (!best || r.time < best.time)) best = r;
     }
   }
   return best;
@@ -221,11 +235,15 @@ function generatePuzzle(dayN) {
   const dow = ((dayN + 2) % 7 + 7) % 7;
   const [bandLo, bandHi] = DIFFICULTY_BANDS[dow];
 
-  // Budget de recherche généreux : beaucoup de tentatives échouent à la validité
-  // (insoluble, contrainte redondante…), surtout les jours difficiles. Un budget
-  // large garantit assez de candidats RÉELLEMENT notés pour tomber dans la bande
-  // de difficulté visée. La génération n'a lieu qu'une fois par jour (mémoïsée).
-  const MAX_TRIES = 1200;
+  // Budget de recherche borné. Beaucoup de tentatives échouent à la validité
+  // (insoluble, contrainte redondante…) et l'on ne s'arrête pas au premier valide :
+  // on vise une bande de difficulté précise (voir plus bas). Le budget est plafonné
+  // à 150 car chaque tentative est coûteuse (jusqu'à 3 contraintes le week-end, et
+  // findOptimalViaLine explore toute une ligne pour "utiliser_ligne") : au-delà, le
+  // temps de génération — synchrone au chargement, même mémoïsé une fois par jour —
+  // deviendrait perceptible (plusieurs secondes). 150 suffit à garder la difficulté
+  // moyenne visée sans fallback, tout en bornant le pire cas à ~1,4 s.
+  const MAX_TRIES = 150;
   // On ne s'arrête pas au premier puzzle valide : on vise une difficulté précise
   // pour ce jour de la semaine (DIFFICULTY_BANDS). Tant qu'aucun candidat ne tombe
   // dans la bande-cible, on retient le plus proche ("best") et on continue à
@@ -640,5 +658,5 @@ function refreshStreaks(dayN = dayNumber()) {
 export {
   computeReqStatus, REQ_LABELS, PUZZLES, FALLBACK_PUZZLES, pathPassesThrough, pathChangesAt,
   isConstraintBinding, dayNumber, dayKey, getDailyPuzzle, generatePuzzle,
-  loadStore, saveStore, recordResult, todaysResult, refreshStreaks,
+  loadStore, saveStore, recordResult, todaysResult, refreshStreaks, findOptimalViaLine,
 };
