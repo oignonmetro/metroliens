@@ -128,6 +128,7 @@ export default function Metrodoku() {
   const [reqStatus, setReqStatus] = useState(() => puzzle.req.map(()=>'pending'));
   const [stats,       setStats]       = useState(null);   // stats à jour après enregistrement
   const [alreadyDone, setAlreadyDone] = useState(false);  // partie du jour déjà jouée
+  const [gaveUp,      setGaveUp]      = useState(false);   // partie abandonnée
   const [attempts,    setAttempts]    = useState(0);      // nb d'essais écoulés (0 ou 1)
   // Route et temps du 1er essai invalide, conservés pour l'afficher en phase 'second-chance'
   const [firstRoute,    setFirstRoute]    = useState(null);
@@ -146,6 +147,7 @@ export default function Metrodoku() {
     const prev = todaysResult(dk);
     if (prev) {
       setAlreadyDone(true);
+      if (prev.abandoned) setGaveUp(true);
       setTotalTime(prev.playerTime);
       // Restaurer l'itinéraire joué pour pouvoir le réafficher avec la solution.
       if (prev.route && prev.route.length) {
@@ -305,6 +307,21 @@ export default function Metrodoku() {
     setQuery(''); setError(null);
   };
 
+  // Abandonner : termine définitivement la partie du jour en échec (sans seconde
+  // chance) et révèle la solution. Le résultat est enregistré comme abandon.
+  const handleGiveUp = () => {
+    if (alreadyDone) return;
+    const updated = recordResult({
+      dayK: dayKey(), dayN: dayNumber(), puzzleNo: puzzle.puzzleNo,
+      playerTime: totalTime, optimalTime: optimal ? optimal.time : null,
+      ratio: null, success: false, route, abandoned: true,
+    });
+    setStats(updated);
+    setGaveUp(true);
+    setError(null);
+    setPhase('done');
+  };
+
   const handleUndo = useCallback(() => {
     if (route.length <= 1) return;
     const newRoute = route.slice(0, -1);
@@ -338,9 +355,10 @@ export default function Metrodoku() {
   // En cas de partie restaurée depuis le stockage (déjà jouée), on s'appuie sur
   // le succès enregistré plutôt que sur le recalcul (route non disponible).
   const storedResult = stats && stats.lastResult;
-  const hasFailed = alreadyDone
-    ? (storedResult ? !storedResult.success : false)
-    : (failedReqs.length > 0 || impossibleSteps.length > 0);
+  const hasFailed = gaveUp
+    || (alreadyDone
+      ? (storedResult ? !storedResult.success : false)
+      : (failedReqs.length > 0 || impossibleSteps.length > 0));
 
   // Raisons d'invalidité, dans l'ordre : d'abord les sauts impossibles, puis les
   // contraintes non respectées. Sert à composer le message de l'écran de fin.
@@ -703,6 +721,14 @@ export default function Metrodoku() {
                 </div>
               )}
             </div>
+
+            {/* Abandonner : termine la partie en échec et dévoile la solution. */}
+            <button onClick={handleGiveUp} style={{
+              alignSelf:'center', marginTop:2, fontSize:12, color:T.dim,
+              background:'none', border:'none', cursor:'pointer',
+              textDecoration:'underline', padding:'4px 8px'}}>
+              Abandonner et voir la solution
+            </button>
           </>
         )}
 
@@ -765,11 +791,13 @@ export default function Metrodoku() {
             <div style={{padding:'20px', borderRadius:12, background:sc.bg,
               border:`1px solid ${sc.border}`, textAlign:'center'}}>
               {hasFailed ? (
-                /* Cas invalide : on n'affiche que la ou les raisons, sans temps ni écart.
-                   Les raisons (sauts impossibles, contraintes non respectées) sont
-                   reliées par "et". */
+                /* Cas invalide/abandon : on n'affiche que le motif, sans temps ni écart.
+                   Abandon → message dédié ; sinon les raisons (sauts impossibles,
+                   contraintes non respectées) reliées par "et". */
                 <div style={{fontSize:15, fontWeight:700, color:C.invalid.fg}}>
-                  Itinéraire invalide car {invalidReasons.join(' et ')}.
+                  {gaveUp
+                    ? "Vous avez abandonné. Voici le trajet le plus rapide."
+                    : `Itinéraire invalide car ${invalidReasons.join(' et ')}.`}
                 </div>
               ) : ratio<=100 ? (
                 /* Cas optimal : le joueur a trouvé le meilleur trajet. On affiche

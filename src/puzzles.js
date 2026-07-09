@@ -594,7 +594,7 @@ function saveStore(obj) {
 // - optimalStreak : jours où la MEILLEURE solution (l'optimal) a été trouvée,
 //   consécutifs. Une solution est optimale quand son temps égale l'optimal (ratio 100).
 // N'écrase jamais un résultat déjà enregistré pour le même jour.
-function recordResult({ dayK, dayN, puzzleNo, playerTime, optimalTime, ratio, success, route }) {
+function recordResult({ dayK, dayN, puzzleNo, playerTime, optimalTime, ratio, success, route, abandoned = false }) {
   const store = loadStore();
   if (store.lastDay === dayK && store.lastResult) {
     return store; // déjà joué aujourd'hui : on ne réécrit pas
@@ -627,7 +627,7 @@ function recordResult({ dayK, dayN, puzzleNo, playerTime, optimalTime, ratio, su
     lastOptDayN: isOptimal ? dayN : prevOptDayN,
     // On enregistre aussi l'itinéraire joué, afin de pouvoir le réafficher
     // (avec la solution) si le joueur revient sur la page le même jour.
-    lastResult: { puzzleNo, playerTime, optimalTime, ratio, success, route },
+    lastResult: { puzzleNo, playerTime, optimalTime, ratio, success, route, abandoned },
   };
   saveStore(next);
   return next;
