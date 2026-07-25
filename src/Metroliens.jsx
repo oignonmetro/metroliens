@@ -604,7 +604,7 @@ export default function Metrodoku() {
             {/* Règle du jeu */}
             <div style={{fontSize:13, color:T.muted, lineHeight:1.6, padding:'11px 14px',
               background:T.surf1, borderRadius:10, border:`1px solid ${T.border}`, textAlign:'justify'}}>
-              Trouvez l'itinéraire le plus rapide, puis dictez vos{' '}
+              Trouvez l'itinéraire le plus rapide, puis écrivez vos{' '}
               <span style={{color:T.text}}>correspondances</span> une à une entre les deux stations ci-dessus. Chaque correspondance coûte{' '}
               <span style={{color:T.text}}>4 min</span>, chaque station{' '}
               <span style={{color:T.text}}>1 min 30</span>.
